@@ -2,6 +2,7 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { isAllowedNavigation } = require('./navigation.cjs');
 
 const DEV_URL = 'http://127.0.0.1:5173/';
 
@@ -16,15 +17,18 @@ function createWindow() {
       nodeIntegration: false,
       webSecurity: true,
       allowRunningInsecureContent: false,
-      devTools: true
+      devTools: process.env.BOLT_DEV === '1'
     }
   });
   // Never allow arbitrary windows or navigation; the renderer requires no external links.
   win.webContents.setWindowOpenHandler(() => ({ action:'deny' }));
   win.webContents.on('will-navigate', (event, navigationUrl) => {
-    const allowed = process.env.BOLT_DEV === '1'
-      ? navigationUrl === DEV_URL
-      : navigationUrl === `file://${path.join(__dirname,'../dist/index.html')}`;
+    const allowed = isAllowedNavigation(
+      navigationUrl,
+      process.env.BOLT_DEV === '1',
+      DEV_URL,
+      path.join(__dirname, '../dist/index.html')
+    );
     if (!allowed) event.preventDefault();
   });
   win.once('ready-to-show', () => win.show());
