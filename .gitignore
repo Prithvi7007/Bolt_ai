@@ -1,0 +1,14 @@
+node_modules/
+**/dist/
+*.pyc
+__pycache__/
+.pytest_cache/
+.local/
+.env
+.env.*
+*.sqlite3
+*.db
+.DS_Store
+*.log
+coverage/
+.superpowers/

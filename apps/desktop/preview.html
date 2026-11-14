@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BOLT — Clickable synthetic API prototype</title><link rel="stylesheet" href="./src/styles.css"/>
+<style>
+.preview-pill{position:fixed;z-index:4;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;pointer-events:none;color:#BFD2F6;letter-spacing:.4px}.tabswitch{border:0;background:transparent;color:inherit}.screenreader-only{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;overflow:hidden}
+</style></head>
+<body><div class="app-shell">
+<aside class="sidebar"><div class="brand"><span class="brand-symbol">ϟ</span><div><strong>BOLT</strong><small>INTELLIGENCE</small></div></div>
+<button class="new-chat" id="new-chat">＋ New conversation</button>
+<div class="sidebar-section-title">WORKSPACE</div><div class="nav-active">◉ &nbsp; AI Analyst <span class="nav-tag">01</span></div>
+<div class="nav-text">▥ &nbsp; Insights <span class="muted-small">Next slice</span></div>
+<div class="nav-text">▣ &nbsp; Presentations <span class="muted-small">Next slice</span></div>
+<div class="sidebar-section-title past-title">RECENT SESSIONS</div><nav class="sessions" id="sessions" aria-label="Past conversations"></nav>
+<div class="sidebar-footer"><span class="status-light"></span> Synthetic sandbox <span class="version">v0.1</span></div></aside>
+<div class="main-column"><header class="topbar"><div class="crumb"><span>Workspace</span><span class="crumb-sep">/</span><strong>AI Analyst</strong></div>
+<div class="top-actions"><span class="chip">◫ Demo dataset</span><span class="chip">◌ 0 LLM tokens</span><button class="icon-button" id="toggle-inspector" aria-label="Show or hide evidence inspector">▧</button></div></header>
+<main class="conversation" id="conversation" aria-label="BOLT analyst conversation"><section class="welcome" id="welcome">
+<div class="welcome-symbol">ϟ</div><p class="eyebrow">YOUR AI DATA ANALYST</p><h1>Ask anything about your data.</h1>
+<p class="lead">Go from questions to evidence-backed insights in one conversation. Start with synthetic revenue data; enterprise connections come later.</p>
+<div class="example-list" id="examples"></div></section><div id="turn-list" class="turn-list"></div><div id="alerts" role="status"></div></main>
+<div class="composer-area"><form class="composer" id="composer-form"><textarea id="question" aria-label="Ask BOLT a question" placeholder="Ask a follow-up question..." rows="2"></textarea>
+<div class="composer-bottom"><span>✧ Read-only demo analytics · Ctrl+Enter to send</span><button type="submit" class="send-button" id="send" aria-label="Send question">↑</button></div></form>
+<div class="composer-disclaimer">BOLT prototype · Synthetic data only · No Snowflake or LLM connection</div></div></div>
+<aside class="inspector" id="inspector" aria-label="Evidence inspector"><div class="inspector-header"><div><span class="eyebrow">SELECTED QUERY EVIDENCE</span><strong>Evidence inspector</strong></div><span>ⓘ</span></div>
+<div class="inspector-tabs" role="tablist"><button class="active" data-tab="sql" role="tab" aria-selected="true">▣ SQL</button><button data-tab="data" role="tab" aria-selected="false">▥ Data</button><button data-tab="details" role="tab" aria-selected="false">≡ Details</button></div>
+<div class="inspector-content" id="evidence-content"><div class="empty-inspector"><span style="font-size:25px">▤</span><strong>Nothing to inspect yet</strong><p>Run a supported question to see the exact SQL, bound parameters and calculated results.</p></div></div>
+<div class="inspector-footer"><span class="connection-dot checking" id="connection-dot"></span><span id="connection-label">Checking API...</span><span class="mono">127.0.0.1</span></div></aside>
+</div><div class="preview-pill">BROWSER PREVIEW · ELECTRON SOURCE INCLUDED</div>
+<script>
+(()=>{
+'use strict';
+const API='http://127.0.0.1:8787';let sessionId='',tabs='sql',turns=[],latest=null,selectedReply=null,busy=false,online=false;
+const $=id=>document.getElementById(id);
+const samples=['Show monthly revenue trend over the last 12 months','Break down 2026 revenue by channel','Compare in-state and out-of-state revenue'];
+const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n);
+const node=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;};
+async function api(path,options={}){const response=await fetch(API+path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});if(!response.ok)throw new Error('API '+response.status);return await response.json();}
+function alert(text,cls='error-notice'){const p=node('div',cls,text);$('alerts').replaceChildren(p);}
+function renderSessions(items){const nav=$('sessions');nav.replaceChildren();for(const s of items){const b=node('button','session-button'+(s.session_id===sessionId?' selected':''),'◷  Conversation '+s.session_id.slice(0,6));b.onclick=()=>openSession(s.session_id);nav.append(b);}}
+async function refresh(){const r=await api('/v1/sessions');renderSessions(r.sessions);return r.sessions;}
+async function createSession(){const r=await api('/v1/sessions',{method:'POST'});sessionId=r.session_id;turns=[];latest=null;selectedReply=null;render();await refresh();}
+async function openSession(id){sessionId=id;selectedReply=null;const r=await api('/v1/sessions/'+id+'/turns');turns=r.turns;latest=turns.filter(t=>t.role==='assistant'&&t.payload?.status==='ok').slice(-1)[0]?.payload||null;render();await refresh();}
+function renderChart(chart,payload){const parent=node('div','result-chart');const head=node('div','chart-head');const title=node('div');title.append(node('span','eyebrow','VERIFIED DEMO RESULT'),node('strong','',chart.title));head.append(title,node('span','chart-chip',chart.labels.length+' groups'));parent.append(head);
+ if(chart.type==='bar') {const bars=node('div','bars');const max=Math.max(...chart.values,1);chart.labels.forEach((label,i)=>{const row=node('div','bar-row'),lab=node('span','bar-label',label),track=node('div','bar-track'),fill=node('span','bar-fill');fill.style.width=(100*chart.values[i]/max)+'%';track.append(fill);row.append(lab,track,node('span','bar-value',money(chart.values[i])));bars.append(row);});parent.append(bars);} else {
+ const SVG='http://www.w3.org/2000/svg',svg=document.createElementNS(SVG,'svg');svg.setAttribute('viewBox','0 0 670 210');svg.setAttribute('class','line-chart');svg.setAttribute('role','img');svg.setAttribute('aria-label',chart.title);
+ for(const y of [30,65,100,135,170]){const line=document.createElementNS(SVG,'line');Object.entries({x1:'24',x2:'650',y1:y,y2:y,stroke:'#35425D','stroke-width':'1','stroke-dasharray':'4 5'}).forEach(([k,v])=>line.setAttribute(k,String(v)));svg.append(line);}
+ const max=Math.max(...chart.values,1);const pts=chart.values.map((v,i)=>(24+i*618/Math.max(1,chart.values.length-1))+','+(170-140*v/max)).join(' ');const line=document.createElementNS(SVG,'polyline');line.setAttribute('points',pts);line.setAttribute('stroke','#60A5FA');line.setAttribute('stroke-width','3');line.setAttribute('fill','none');svg.append(line);
+ for(const [x,txt] of [[24,chart.labels[0]],[640,chart.labels.at(-1)]]){const t=document.createElementNS(SVG,'text');t.setAttribute('x',String(x));t.setAttribute('y','199');t.setAttribute('fill','#9DACBF');t.setAttribute('font-size','13');if(x>600)t.setAttribute('text-anchor','end');t.textContent=txt;svg.append(t);}parent.append(svg);}
+ const footer=node('div','chart-footer');footer.append(node('span','','✓ Query executed'));const button=node('button','','View SQL ↗');button.onclick=()=>{selectedReply=payload;tabs='sql';$('inspector').style.display='flex';renderEvidence();};footer.append(button);parent.append(footer);return parent;}
+function renderEvidence(){const result=selectedReply||latest;const target=$('evidence-content');target.replaceChildren();document.querySelectorAll('[data-tab]').forEach(b=>{const active=b.dataset.tab===tabs;b.classList.toggle('active',active);b.setAttribute('aria-selected',String(active));});
+ if(!result?.evidence){const empty=node('div','empty-inspector');empty.append(node('strong','','Nothing to inspect yet'),node('p','','Ask a supported question to generate SQL evidence.'));target.append(empty);return;}
+ const ev=result.evidence;if(tabs==='sql'){target.append(node('div','evidence-label','EXECUTED QUERY'));const sql=node('pre','sql');sql.append(node('code','',ev.sql));target.append(sql,node('div','evidence-label','BOUND PARAMETERS'));const params=node('pre','sql');params.append(node('code','',JSON.stringify(ev.parameters,null,2)));target.append(params);}else if(tabs==='data'&&result.data){const wrap=node('div','data-table-wrapper'),table=node('table'),thead=node('thead'),tr=node('tr');for(const c of result.data.columns)tr.append(node('th','',c));thead.append(tr);table.append(thead);const tbody=node('tbody');for(const r of result.data.rows){const row=node('tr');for(const c of result.data.columns)row.append(node('td','',typeof r[c]==='number'?money(r[c]):r[c]));tbody.append(row);}table.append(tbody);wrap.append(table);target.append(wrap);}else {const details=node('div','details-grid');for(const [k,v] of Object.entries({'Source':ev.source,'Metric':ev.metric_id,'Rows':ev.row_count,'Query ID':ev.query_id,'Model calls':'0 (deterministic demo)'})){const d=node('div','',k);d.append(node('strong','',String(v)));details.append(d);}target.append(details);}}
+function render(){ $('welcome').style.display=turns.length?'none':'block';const box=$('turn-list');box.replaceChildren();for(const turn of turns){const section=node('section','turn '+turn.role);section.setAttribute('aria-label',turn.role==='user'?'Your message':'BOLT answer');section.append(node('div','turn-icon',turn.role==='user'?'YOU':'ϟ'));const body=node('div','turn-body');body.append(node('div','turn-meta',turn.role==='user'?'You':'BOLT · Synthetic analysis'),node('p','',turn.body));if(turn.payload?.chart)body.append(renderChart(turn.payload.chart,turn.payload));if(turn.payload?.status==='unsupported')body.append(node('span','notice','No SQL executed · Supported: synthetic revenue'));section.append(body);box.append(section);}renderEvidence();$('conversation').scrollTop=$('conversation').scrollHeight;}
+async function send(q){if(!online||busy||!sessionId||!q.trim())return;busy=true;$('question').value='';$('send').disabled=true;$('alerts').replaceChildren();turns.push({role:'user',body:q,payload:null});render();alert('Validating the governed query and calculating synthetic results…','loading');try{const r=await api('/v1/chat',{method:'POST',body:JSON.stringify({session_id:sessionId,question:q})});turns.push({role:'assistant',body:r.answer,payload:r});if(r.status==='ok'){latest=r;selectedReply=null;tabs='sql';}render();$('alerts').replaceChildren();}catch(e){alert('Unable to complete query. Check the Python API server.');}finally{busy=false;$('send').disabled=false;}}
+function setConnection(ok){online=ok;$('connection-dot').className='connection-dot '+(ok?'online':'offline');$('connection-label').textContent=ok?'Synthetic API online':'API unavailable';$('question').disabled=!ok;$('send').disabled=!ok;}
+for(let i=0;i<samples.length;i++){const b=node('button','example');b.append(node('span','example-number','0'+(i+1)),node('span','',samples[i]),node('span','','↗'));b.onclick=()=>send(samples[i]);$('examples').append(b);}
+$('composer-form').addEventListener('submit',e=>{e.preventDefault();send($('question').value);});$('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();send($('question').value);}});
+$('new-chat').addEventListener('click',()=>createSession().catch(()=>alert('API unavailable')));
+$('toggle-inspector').addEventListener('click',()=>{const el=$('inspector');el.style.display=el.style.display==='none'?'flex':'none';});
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{tabs=b.dataset.tab;renderEvidence();}));
+(async()=>{try{const health=await api('/health');if(health.mode!=='synthetic')throw new Error('Wrong data source');setConnection(true);const sessions=await refresh();if(sessions.length)await openSession(sessions[0].session_id);else await createSession();}catch(e){setConnection(false);alert('Python API is offline. Run the API first, then reload this preview.');}})();
+})();
+</script></body></html>
