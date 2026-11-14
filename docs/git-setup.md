@@ -1,31 +1,29 @@
 # BOLT AI — GitHub setup
 
-The prototype is distributed as a Git repository with a real initial commit. Its `main` branch is intended as the baseline, and future features should land on `feature/*` branches through pull requests.
+The prototype is now published to the existing GitHub repository `Prithvi7007/Bolt_ai` on `feature/bolt-v01-synthetic-analyst` as draft PR #1. The repository's `main` branch already exists. Do not recreate it or attempt to push the archived bundle history over it.
 
-## Option 1: Use the Git-ready ZIP
+## Historical offline export: Git-ready ZIP (not for pushing to the existing main)
 
 1. Extract `BOLT_AI_v0.1_git_repository.zip` to a folder on your computer.
-2. Create a **private** empty GitHub repository named `bolt-ai` under the `Prithvi7007` account, **without** initializing a README, .gitignore, or license. This keeps the repository histories compatible.
-3. Open a terminal in the extracted folder and run:
+2. The extracted history is a standalone offline archive. To inspect it locally, open a terminal inside the extracted `bolt-ai` folder and run:
 
    ```bash
-   git remote add origin https://github.com/Prithvi7007/bolt-ai.git
-   git push -u origin main
+   git log --oneline
+   git status --short
    ```
 
-   GitHub Desktop or SSH authentication may be used instead of HTTPS. Do not paste credentials into source files or chat.
+   Do not force-push this archive over the existing GitHub repository. Never paste credentials into source files or chat.
 
-## Option 2: Restore from the Git bundle
+## Historical offline export: Restore from the Git bundle
 
 ```bash
 git clone --branch main BOLT_AI_v0.1_git.bundle bolt-ai
 cd bolt-ai
-git remote remove origin
-git remote add origin https://github.com/Prithvi7007/bolt-ai.git
-git push -u origin main
+git log --oneline
+git status --short
 ```
 
-Create the private empty GitHub repository first. The bundle contains the history of `main` and has no remote credentials or company data.
+The bundle contains an independent archived history of `main`; it has no remote credentials or company data and should not be pushed over the existing repository.
 
 ## Recommended collaboration conventions
 

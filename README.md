@@ -89,4 +89,4 @@ Snowflake/Cortex, live LLM calls, LangGraph execution, PPTX generation, producti
 - Slice A plan: `docs/superpowers/plans/2026-11-13-bolt-slice-a.md`
 - Impact/measurement plan: `docs/impact/prototype-metrics.md`
 
-This distribution includes a local Git commit. No GitHub repository was modified or created. See `docs/git-setup.md` to publish the code in a private GitHub repository; keep secrets out of git.
+The prototype source is published in `Prithvi7007/Bolt_ai` on the `feature/bolt-v01-synthetic-analyst` branch for review in draft PR #1. This is source code, not a deployed application or compiled Electron release. Keep secrets and business data out of Git.
