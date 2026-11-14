@@ -17,6 +17,19 @@ const EXAMPLES=['Show monthly revenue trend over the last 12 months',
                 'Compare in-state and out-of-state revenue'];
 
 async function request<T>(path:string,init?:RequestInit):Promise<T>{
+  if (window.boltApi) {
+    // Authenticated Electron IPC: renderer never receives the backend port or token.
+    const reply=await window.boltApi.request(path,{
+      method:init?.method === 'POST' ? 'POST' : 'GET',
+      ...(typeof init?.body === 'string' ? {body:init.body} : {})
+    });
+    if(!reply.ok) throw new Error(`API request failed (${reply.status})`);
+    return reply.data as T;
+  }
+  if (window.location.protocol === 'file:') {
+    throw new Error('Authenticated desktop API bridge is unavailable');
+  }
+  // Browser development mode retains explicit loopback-only access.
   const response=await fetch(`${API}${path}`,{...init,headers:{'Content-Type':'application/json',...(init?.headers||{})}});
   if(!response.ok) throw new Error(`API request failed (${response.status})`);
   return response.json() as Promise<T>;
@@ -82,7 +95,7 @@ export default function App(){
         setSessions(result.sessions);
         if(result.sessions[0]) await openSession(result.sessions[0].session_id);
         else await createSession();
-      }catch(e){if(live){setHealthy('offline');setError('Backend is offline. Start the synthetic FastAPI server and refresh.')}}
+      }catch(e){if(live){setHealthy('offline');setError('The BOLT local service is offline. Restart the application and try again.')}}
     })();
     return ()=>{live=false;};
   },[]);

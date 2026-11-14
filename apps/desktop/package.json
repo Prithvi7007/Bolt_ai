@@ -10,10 +10,12 @@
     "web": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build && node scripts/check-dist.mjs",
     "start": "electron .",
-    "verify:source": "node --test electron/navigation.test.cjs && node --check electron/main.cjs",
-    "pack:dir": "npm run build && electron-builder --dir --publish never",
-    "pack:win": "npm run build && electron-builder --win nsis --x64 --publish never",
-    "pack:linux": "npm run build && electron-builder --linux AppImage --x64 --publish never"
+    "verify:source": "node --test electron/navigation.test.cjs electron/runtime.test.cjs && node --check electron/main.cjs && node --check electron/preload.cjs",
+    "backend:build": "python ../../scripts/build_backend.py",
+    "backend:check": "node scripts/check-backend.mjs",
+    "pack:dir": "npm run build && npm run backend:build && npm run backend:check && electron-builder --dir --publish never",
+    "pack:win": "npm run build && npm run backend:build && npm run backend:check && electron-builder --win nsis --x64 --publish never",
+    "pack:linux": "npm run build && npm run backend:build && npm run backend:check && electron-builder --linux AppImage --x64 --publish never"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
@@ -41,7 +43,19 @@
       "dist/**/*",
       "electron/main.cjs",
       "electron/navigation.cjs",
+      "electron/preload.cjs",
+      "electron/runtime.cjs",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": [
+          "bolt-service",
+          "bolt-service.exe"
+        ]
+      }
     ],
     "directories": {
       "output": "release"
