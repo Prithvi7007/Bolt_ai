@@ -15,7 +15,7 @@ GitHub Actions builds unsigned **Windows NSIS x64** and **Linux AppImage x64** p
 3. Under **Artifacts**, download `BOLT-AI-Windows-NSIS-unsigned` or `BOLT-AI-Linux-AppImage-unsigned`, then extract the ZIP.
 4. Test on a personal or disposable computer, not a managed work device.
 
-These are **unsigned** test installers and may trigger SmartScreen or antivirus warnings. The installer currently uses version `0.1.0` from `apps/desktop/package.json`, even though the desktop runtime and packaging workflow have advanced through later development PRs. Passing CI **does not** verify full graphical launch, install/uninstall behavior, signing, auto-updates, or production readiness.
+These are **unsigned** test installers and may trigger SmartScreen or antivirus warnings. The desktop package is version `1.2.0`. Windows CI launches the packaged Electron application and verifies the synthetic Analyst and local CSV Data Lab flows. CI does not verify installer install/uninstall behavior, signing, auto-updates, Linux GUI behavior, or production readiness.
 
 ## See the prototype (fastest path)
 
@@ -49,6 +49,10 @@ npm run dev
 This launches Vite and Electron. **Electron automatically starts and authenticates the local Python service** on a random loopback port, using a restricted preload IPC API; the React renderer never receives the bearer token. There is no need to start FastAPI separately for the Electron developer app. The standalone browser preview above still requires the manually launched development API.
 
 For a native installer, install `services/api/requirements-build.txt` in Python, then run `npm run pack:win` (on Windows) or `npm run pack:linux` (on Linux) inside `apps/desktop`. PyInstaller must run on the target OS. See [desktop runtime details](docs/desktop-sidecar-v02.md) and [native installer verification](docs/native-installers-ci.md).
+
+## Prototype status
+
+The synthetic prototype is complete as of November 15, 2026. The implementation plan, API and desktop tests, native Windows/Linux packages, authenticated sidecar, and packaged Windows GUI flow are verified on `main`. See the [prototype closure report](docs/impact/prototype-closure-2026-11-15.md) for exact evidence and the boundary between completed work and future enterprise phases.
 
 ## Prototype features
 
@@ -102,4 +106,4 @@ Snowflake/Cortex, live LLM calls, LangGraph execution, PPTX generation, producti
 - Slice A plan: `docs/superpowers/plans/2026-11-13-bolt-slice-a.md`
 - Impact/measurement plan: `docs/impact/prototype-metrics.md`
 
-The prototype source is published in [Prithvi7007/Bolt_ai](https://github.com/Prithvi7007/Bolt_ai). Native CI builds and packaged-backend smoke tests validate the **synthetic** workflow, not a graphical end-to-end user session. Keep secrets and business data out of Git.
+The prototype source is published in [Prithvi7007/Bolt_ai](https://github.com/Prithvi7007/Bolt_ai). Native CI validates Windows and Linux packaging, the authenticated bundled backend, and the packaged Windows graphical workflow with synthetic data. Keep secrets and business data out of Git.
