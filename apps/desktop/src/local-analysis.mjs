@@ -50,6 +50,7 @@ function collector(options) {
   const target = options.target;
   const dimension = options.dimension || null;
   const dateColumn = options.dateColumn || null;
+  const predictor = options.predictor || null;
   if (target === dimension || target === dateColumn) throw new Error('Target must be separate from date and group columns');
   let targetIndex = -1, dimensionIndex = -1, dateIndex = -1;
   let pairs = null;
@@ -58,7 +59,7 @@ function collector(options) {
   let valid = 0, mean = 0, m2 = 0, sum = 0, min = null, max = null;
   let dateLimited = false, groupsLimited = false;
   const dates = new Map(), groups = new Map();
-  const OVERFLOW = '\u0000other';
+  const OVERFLOW = Symbol('overflow');
 
   function consume(headers, values) {
     if (!pairs) {
@@ -96,7 +97,8 @@ function collector(options) {
         key = OVERFLOW;
         groupsLimited = true;
       }
-      const entry = groups.get(key) || {label: key === OVERFLOW ? 'Additional groups' : label, sum: 0, n: 0};
+      const entry = groups.get(key) || {label: key === OVERFLOW ? 'Additional groups' : label,
+        isOverflow: key === OVERFLOW, sum: 0, n: 0};
       entry.sum += y;
       entry.n++;
       groups.set(key, entry);
@@ -128,6 +130,10 @@ function collector(options) {
     if (dateColumn && profile.columns.find(col => col.name === dateColumn)?.type !== 'date') {
       throw new Error('Date column must be date-formatted');
     }
+    if (predictor && (predictor === target
+        || profile.columns.find(col => col.name === predictor)?.type !== 'numeric')) {
+      throw new Error('Correlation predictor must be a separate numeric column in the dataset');
+    }
     const corrs = (pairs || []).filter(p =>
       profile.columns.find(col => col.name === p.name)?.type === 'numeric'
       && p.n >= 3 && p.m2X > 0 && p.m2Y > 0
@@ -137,7 +143,7 @@ function collector(options) {
     })).sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation)
       || a.column.localeCompare(b.column));
     const groupRows = [...groups.values()].map(row => ({
-      label: row.label, rows: row.n, sum: row.sum, mean: row.sum / row.n,
+      label: row.label, isOverflow: row.isOverflow, rows: row.n, sum: row.sum, mean: row.sum / row.n,
     })).sort((a, b) => b.rows - a.rows || a.label.localeCompare(b.label));
     const timeline = [...dates.values()].sort((a, b) => a.date.localeCompare(b.date))
       .map(row => ({date: row.date, rows: row.n, sum: row.sum, mean: row.sum / row.n}));
@@ -157,7 +163,8 @@ function collector(options) {
       excludedTargetRows: profile.rowCount - valid,
       total: valid ? sum : null, mean: valid ? mean : null,
       standardDeviation: valid > 1 ? Math.sqrt(m2 / (valid - 1)) : null,
-      min, max, correlations: corrs.slice(0, 12), checkedPredictorColumns: retainedPredictorCount,
+      min, max, correlations: predictor ? corrs.filter(row => row.column === predictor) : corrs.slice(0, 12),
+      checkedPredictorColumns: retainedPredictorCount,
       groups: groupRows, timeline, dateLimited, groupsLimited, warnings,
       processing: 'On-device descriptive statistics over valid CSV records; bounded memory; no network requests',
     };

@@ -93,7 +93,7 @@ export default function LocalAnalysis({file, profile, target}: {file: File; prof
         <div className="lab-analysis-section">
           <h4><BarChart3 size={16}/> Breakdown by {dimension || 'group'}</h4>
           {report.groups.length ? <div className="lab-analysis-table-wrap"><table><thead><tr><th>Group</th><th>Valid rows</th><th>Mean</th><th>Sum</th></tr></thead>
-            <tbody>{report.groups.map(row => <tr key={row.label}><td title={row.label}>{row.label}</td><td>{row.rows.toLocaleString()}</td><td>{display(row.mean)}</td><td>{display(row.sum)}</td></tr>)}</tbody>
+            <tbody>{report.groups.map(row => <tr key={row.isOverflow?'overflow':'category:'+row.label}><td title={row.label}>{row.label}{row.isOverflow?' (combined overflow)':''}</td><td>{row.rows.toLocaleString()}</td><td>{display(row.mean)}</td><td>{display(row.sum)}</td></tr>)}</tbody>
           </table></div> : <p className="lab-analysis-empty">Select an optional categorical breakdown above, then run analysis to compare groups.</p>}
           <small>Groups are descriptive aggregations, not causal comparisons.</small>
         </div>
