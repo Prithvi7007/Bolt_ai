@@ -9,14 +9,14 @@ def test_local_csv_profiler_regressions():
     suite = ROOT / "apps" / "desktop" / "src" / "dataset-understanding.test.mjs"
     result = subprocess.run(
         ["node", "--test", str(suite)],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, encoding="utf-8", timeout=30,
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
 
 
 def test_csv_data_is_never_transmitted_to_the_synthetic_backend():
-    profiler = (ROOT / "apps" / "desktop" / "src" / "dataset-understanding.mjs").read_text()
-    lab = (ROOT / "apps" / "desktop" / "src" / "DatasetLab.tsx").read_text()
+    profiler = (ROOT / "apps" / "desktop" / "src" / "dataset-understanding.mjs").read_text(encoding="utf-8")
+    lab = (ROOT / "apps" / "desktop" / "src" / "DatasetLab.tsx").read_text(encoding="utf-8")
     assert "profileCsvFile(file)" in lab
     assert "File" in lab
     for network_call in ("fetch(", "XMLHttpRequest", "sendBeacon(", "boltApi.request("):
@@ -29,11 +29,11 @@ def test_local_analysis_regressions_and_network_boundary():
     suite = ROOT / "apps" / "desktop" / "src" / "local-analysis.test.mjs"
     result = subprocess.run(
         ["node", "--test", str(suite)],
-        capture_output=True, text=True, timeout=35,
+        capture_output=True, text=True, encoding="utf-8", timeout=35,
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
-    analysis = (ROOT / "apps" / "desktop" / "src" / "local-analysis.mjs").read_text()
-    analysis_ui = (ROOT / "apps" / "desktop" / "src" / "LocalAnalysis.tsx").read_text()
+    analysis = (ROOT / "apps" / "desktop" / "src" / "local-analysis.mjs").read_text(encoding="utf-8")
+    analysis_ui = (ROOT / "apps" / "desktop" / "src" / "LocalAnalysis.tsx").read_text(encoding="utf-8")
     for network_call in ("fetch(", "XMLHttpRequest", "sendBeacon(", "boltApi.request("):
         assert network_call not in analysis
         assert network_call not in analysis_ui
@@ -45,12 +45,12 @@ def test_ask_your_data_local_query_contract():
     suite = ROOT / "apps" / "desktop" / "src" / "ask-data.test.mjs"
     result = subprocess.run(
         ["node", "--test", str(suite)],
-        capture_output=True, text=True, timeout=35,
+        capture_output=True, text=True, encoding="utf-8", timeout=35,
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
-    engine = (ROOT / "apps" / "desktop" / "src" / "ask-data.mjs").read_text()
-    gui = (ROOT / "apps" / "desktop" / "src" / "AskYourData.tsx").read_text()
-    lab = (ROOT / "apps" / "desktop" / "src" / "DatasetLab.tsx").read_text()
+    engine = (ROOT / "apps" / "desktop" / "src" / "ask-data.mjs").read_text(encoding="utf-8")
+    gui = (ROOT / "apps" / "desktop" / "src" / "AskYourData.tsx").read_text(encoding="utf-8")
+    lab = (ROOT / "apps" / "desktop" / "src" / "DatasetLab.tsx").read_text(encoding="utf-8")
     for network_call in ("fetch(", "XMLHttpRequest", "sendBeacon(", "boltApi.request("):
         assert network_call not in engine
         assert network_call not in gui

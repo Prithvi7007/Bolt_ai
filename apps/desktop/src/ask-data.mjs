@@ -9,8 +9,10 @@ import {analyzeCsvFile} from './local-analysis.mjs';
 
 const MAX_QUESTION_LENGTH = 400;
 const UNSUPPORTED_SCOPE = /\b(?:where|filter(?:ed)?|only rows|excluding|except|before|after|since|until|between \d{4}|last \d+|next \d+|previous \d+|in \d{4}|during \d{4}|for \d{4}|from \d{4}|greater than|less than|at least|more than \d+)\b/i;
-const FORBIDDEN_INFERENCE = /\b(?:forecast|predict|prediction|project|future|cause|causal|why|significan(?:ce|t)|p-value|regression|optimi[sz]e)\b/i;
-const RELATIONSHIP = /\b(?:correlat\w*|relationship|relat(?:e|ed|ion)\w*|association|driver(?:s)?|impact|influence)\b/i;
+const FORBIDDEN_INFERENCE = /\b(?:forecast|predict|prediction|project|future|cause|causal|why|significan(?:ce|t)|p-value|regression|optimi[sz]e|drivers?|impact|influence)\b/i;
+const RELATIONSHIP = /\b(?:correlat\w*|relationship|relat(?:e|ed|ion)\w*|association)\b/i;
+const UNSUPPORTED_STATISTIC = /\b(?:median|mode|percentiles?|quantiles?|quartiles?|variance|ratios?|proportions?|growth|weighted|cumulative|rolling|moving)\b/i;
+const REQUESTED_GRAIN = /\b(?:daily|weekly|monthly|yearly|annual|by day|by week|by month|by year)\b/i;
 const TIMELINE = /\b(?:trend|over time|time series|timeline|by date|by day|by week|by month|monthly|weekly|daily|across months?|across weeks?|changes? over time|period by period)\b/i;
 const GROUP_CUE = /\b(?:by|per|across|each|among|within|breakdown|compare|comparison|highest|lowest|top|bottom|which)\b/i;
 const TOTAL = /\b(?:sum|total|overall|aggregate|combined)\b/i;
@@ -79,11 +81,20 @@ export function planDataQuestion(question, profile, approvedTarget) {
   if (FORBIDDEN_INFERENCE.test(q)) {
     return {kind:'unsupported', error:'This release calculates descriptive statistics only. It does not forecast, test statistical significance, determine causes or optimize.'};
   }
+  if (UNSUPPORTED_STATISTIC.test(q)) {
+    return {kind:'unsupported', error:'That statistic is not available yet. Ask for a total, arithmetic mean, range, count or descriptive overview.'};
+  }
+  if (REQUESTED_GRAIN.test(q)) {
+    return {kind:'unsupported', error:'Calendar reaggregation is not available yet. Ask for a trend over time to summarize the observed date keys in the CSV.'};
+  }
   if (QUALITY.test(q)) return {kind:'quality', target: approvedTarget};
   const relationship = RELATIONSHIP.test(q);
   const mentions = metricChoice(q,profile,approvedTarget);
-  const byDim = profile.columns.filter(col => col.type === 'categorical' && containsColumn(q,col.name))
-    .sort((a,b) => b.name.length - a.name.length)[0];
+  const dimensions = profile.columns.filter(col => col.type === 'categorical' && containsColumn(q,col.name));
+  const byDim = dimensions.sort((a,b) => b.name.length - a.name.length)[0];
+  if (dimensions.length > 1 || (byDim && profile.dateColumn && containsColumn(q,profile.dateColumn))) {
+    return {kind:'unsupported', error:'Ask for one categorical breakdown at a time. Combined categorical and date breakdowns are not supported yet.'};
+  }
   const numerical = mentions.sort((a,b) => b.name.length - a.name.length);
   if (!relationship && numerical.length) {
     return {kind:'unsupported', error:'Another numeric field was mentioned. Approve that field as the target first, or explicitly ask for its correlation with ' + approvedTarget + '.'};
@@ -98,11 +109,20 @@ export function planDataQuestion(question, profile, approvedTarget) {
   const numericLimit = /\b(?:top|bottom)\s+(\d{1,2})\b/i.exec(q);
   const limit = numericLimit ? Math.min(10,Math.max(1,Number(numericLimit[1]))) : 5;
   if (dimension && (GROUP_CUE.test(q) || ranking)) {
+    if (RANGE.test(q) || (COUNT.test(q) && !AVERAGE.test(q) && !TOTAL.test(q))) {
+      return {kind:'unsupported', error:'Grouped calculations support totals and arithmetic means only. Grouped counts and ranges are not available yet.'};
+    }
     return {kind:'group', target:approvedTarget, dimension, aggregation, ranking, limit};
   }
   if (TIMELINE.test(q)) {
+    if (RANGE.test(q) || (COUNT.test(q) && !AVERAGE.test(q) && !TOTAL.test(q))) {
+      return {kind:'unsupported', error:'Date summaries support totals and arithmetic means only.'};
+    }
     if (!profile.dateColumn) return {kind:'unsupported', error:'No reliable date column was detected. A time-series answer cannot be calculated.'};
     return {kind:'timeline', target:approvedTarget, dateColumn:profile.dateColumn, aggregation};
+  }
+  if (/\b(?:by|per|group(?:ed)?|breakdown)\b/i.test(q)) {
+    return {kind:'unsupported', error:'Specify a categorical column from this CSV for a grouped total or mean.'};
   }
   if (ranking && !dimension) {
     return {kind:'unsupported', error:'Specify a categorical breakdown, for example “Which region has the highest total ' + approvedTarget + '?”'};
@@ -111,8 +131,14 @@ export function planDataQuestion(question, profile, approvedTarget) {
   if (RANGE.test(q)) return {kind:'range', target:approvedTarget};
   if (AVERAGE.test(q)) return {kind:'mean', target:approvedTarget};
   if (TOTAL.test(q)) return {kind:'sum', target:approvedTarget};
-  if (/\b(?:summari[sz]e|summary|describe|overview|statistics|about|tell me|show me)\b/i.test(q)
-      || containsColumn(q,approvedTarget)) return {kind:'overview', target:approvedTarget};
+  const targetName = normalize(approvedTarget);
+  const overviewQuestions = [
+    targetName, 'summarize '+targetName, 'summarise '+targetName,
+    'describe '+targetName, 'summary of '+targetName, 'overview of '+targetName,
+    'statistics for '+targetName, 'tell me about '+targetName,
+    'show me '+targetName, 'what is '+targetName,
+  ];
+  if (overviewQuestions.includes(normalize(q))) return {kind:'overview', target:approvedTarget};
   return {kind:'unsupported', error:'I could not match that to a supported calculation. Try one of the suggested questions.'};
 }
 

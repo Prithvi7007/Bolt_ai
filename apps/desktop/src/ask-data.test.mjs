@@ -21,6 +21,24 @@ function fileFromText(source=csv) {
 }
 const ask = question => answerDataQuestion(fileFromText(),question,profile,'revenue');
 
+for (const question of [
+  'What is the median revenue?',
+  'What is total revenue per customer?',
+  'How many revenue rows by region?',
+  'What is minimum revenue by region?',
+  'Give me a pizza recipe about revenue',
+  'Show daily revenue trend over time',
+  'What is total revenue by region and month?',
+  'What is the impact of spend on revenue?',
+]) {
+  test('asks for clarification instead of substituting another calculation: '+question, async()=>{
+    const answer = await ask(question);
+    assert.equal(answer.kind, 'unsupported');
+    assert.equal(answer.evidence, null);
+    assert.equal(answer.calculation, null);
+  });
+}
+
 test('understands summaries and computes actual on-device answers rather than synthetic demo data',async()=>{
   const q=await ask('What is the total revenue?');
   assert.equal(q.kind,'answered');
