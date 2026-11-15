@@ -1,16 +1,20 @@
-# BOLT native installers and executable smoke tests
+# BOLT native installers and graphical verification
 
-This document proposes a GitHub Actions workflow for building **unsigned test installers** on native operating systems. The workflow is currently an **inactive template** at `docs/ci-examples/desktop-installers.yml`; CREW Development Bridge deliberately prohibits creating live `.github/workflows/` entries. It requires manual code/security review and placement into `.github/workflows/desktop-installers.yml` before it will run. No app services, real company data, or secrets are required. It is **not a deployment**.
+The **active** GitHub Actions workflow at `.github/workflows/desktop-installers.yml` builds unsigned Windows NSIS x64 and Linux AppImage x64 packages from this synthetic-only repository. The earlier workflow template is retained in `docs/ci-examples/` for reference. The builds are not deployments or production-ready releases.
 
-## CI workflow — not active until manually installed
+## Active native installer CI
 
-After human review, copy `docs/ci-examples/desktop-installers.yml` to `.github/workflows/desktop-installers.yml` on a reviewed branch and merge that workflow separately. Do not assume an installer exists until a GitHub Actions run finishes successfully.
+Open [BOLT's native build workflow](https://github.com/Prithvi7007/Bolt_ai/actions/workflows/desktop-installers.yml) to view runs. Artifacts are uploaded only when the relevant platform's tests pass.
 
 The `BOLT native desktop build and smoke test` workflow runs on PRs that change the desktop, synthetic fixture, backend or build scripts; runs on a qualifying merge to `main`; and supports manual `workflow_dispatch`. It uses hosted `windows-2022` and `ubuntu-22.04` runners with Python 3.11 and Node 22, installs the committed lockfile via `npm ci`, runs API and Electron tests, then invokes `npm run pack:win`/`pack:linux`.
 
 Each job then executes `scripts/verify_packaged_backend.py` against the actual `resources/backend/bolt-service(.exe)` **inside the Electron output**. The smoke test checks bearer authorization, health, a synthetic revenue query with SQL evidence, and persisted session history. An unsigned NSIS `.exe` or Linux `.AppImage` is uploaded as a downloadable Actions artifact **only if all preceding checks pass**.
 
-## Download and review the installer (only after workflow activation and a successful run)
+On Windows GitHub Actions, the packaged-backend smoke test also runs `scripts/verify_electron_gui.mjs` against the **real unpacked Electron app**. Using an isolated temporary application profile and a short-lived localhost-only DevTools connection, it checks that the synthetic analytics window renders a revenue chart, that SQL and the Data inspector are available, and that the same session survives a full application restart. The Windows artifact is uploaded only if this graphical test passes.
+
+Linux CI still tests the bundled backend, not the graphical window. Linux GUI verification can be run manually with a display or `xvfb-run`.
+
+## Download and review successful installer artifacts
 
 1. Open GitHub repository **Actions** → **BOLT native desktop build and smoke test**.
 2. Select a successful workflow run for the PR or commit.
@@ -21,7 +25,7 @@ The artifacts are **unsigned**. Windows SmartScreen and antivirus tools can warn
 
 ## What a successful CI run proves (and does not)
 
-It proves native platform packaging and authenticated, bundled FastAPI backend execution with synthetic revenue. It **does not** yet prove a real graphical Electron session, Windows installer lifecycle (install/uninstall/updater), security audit, model integration, or access to production data.
+A successful Windows job validates native packaging, authenticated bundled API responses and an actual packaged Electron window answering synthetic questions, displaying chart/SQL evidence, and restoring the same conversation after restart. Linux CI validates native packaging and bundled API responses, not the Linux GUI. Neither platform's CI verifies installer install/uninstall, accessibility, signing, auto-updates, security audits, LLM integration, or production data access.
 
 ## Run the same checks locally
 
