@@ -178,6 +178,7 @@ export async function answerDataQuestion(file, question, profile, approvedTarget
   const requestedGroup = plan.kind === 'group' ? plan.dimension : null;
   const report = await analyzeCsvFile(file,{
     target:approvedTarget, dimension:requestedGroup, dateColumn:requestedDate,
+    predictor:plan.kind === 'correlation' ? plan.predictor : null,
   });
   if (!report.validRows) return result(plan.kind,'No numeric target observations',
     'The imported file has no valid numeric values for ' + approvedTarget + '.',
@@ -210,7 +211,7 @@ export async function answerDataQuestion(file, question, profile, approvedTarget
       if (!report.groups.length) return result(plan.kind,'No group observations',
         'No valid grouped target observations were found.', 'Grouping by '+plan.dimension,report);
       // The overflow group combines distinct categories and cannot be used in a winner ranking.
-      let groups = report.groups.filter(g => g.label !== 'Additional groups');
+      let groups = report.groups.filter(g => !g.isOverflow);
       groups = groups.sort((a,b)=>plan.ranking==='bottom'
         ? (a[plan.aggregation]-b[plan.aggregation] || a.label.localeCompare(b.label))
         : (b[plan.aggregation]-a[plan.aggregation] || a.label.localeCompare(b.label)));

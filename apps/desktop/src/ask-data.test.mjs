@@ -21,6 +21,25 @@ function fileFromText(source=csv) {
 }
 const ask = question => answerDataQuestion(fileFromText(),question,profile,'revenue');
 
+test('answers an explicitly requested predictor even when it is outside the top twelve correlations', async()=>{
+  const names = Array.from({length:13}, (_,i)=>'signal_'+i);
+  const lines = ['revenue,'+names.join(',')+',weak_signal'];
+  for (let i=0;i<6;i++) lines.push([i+1,...names.map(()=>i+1),i%2].join(','));
+  const source = lines.join('\n');
+  const result = await answerDataQuestion(fileFromText(source),
+    'What is the correlation of revenue with weak_signal?',profileCsvText(source),'revenue');
+  assert.equal(result.kind,'answered');
+  assert.match(result.answer,/weak_signal: r = 0\.293 using 6 paired rows/);
+});
+
+test('includes a real category named Additional groups in rankings', async()=>{
+  const source = 'region,revenue\n'+['Additional groups,10','East,1'].flatMap(row=>[row,row,row]).join('\n');
+  const result = await answerDataQuestion(fileFromText(source),
+    'Which region has highest total revenue?',profileCsvText(source),'revenue');
+  assert.match(result.answer,/Additional groups has the highest observed total revenue: 30/);
+  assert.equal(result.table[0].label,'Additional groups');
+});
+
 for (const question of [
   'What is the median revenue?',
   'What is total revenue per customer?',

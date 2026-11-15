@@ -68,6 +68,33 @@ test('group cardinality cap rolls later groups into a disclosed overflow bucket'
   assert.equal(extra.sum,370);
 });
 
+test('keeps a real Additional groups category separate from the overflow bucket', () => {
+  const names = ['Additional groups',...Array.from({length:19},(_,i)=>'G'+i)];
+  const rows = names.flatMap((name,i)=>Array.from({length:5},()=>name+','+(i+1)));
+  const result = analyzeCsvText('group,metric\n'+rows.join('\n'),{target:'metric',dimension:'group'});
+  const matching = result.groups.filter(row=>row.label==='Additional groups');
+  assert.equal(matching.length,2);
+  assert.equal(matching.find(row=>!row.isOverflow).sum,5);
+  assert.equal(matching.find(row=>row.isOverflow).sum,370);
+  assert.equal(result.groupsLimited,true);
+});
+
+test('a requested correlation still respects the 256-column computation limit', () => {
+  const names = Array.from({length:257},(_,i)=>'signal_'+i);
+  const rows = Array.from({length:5},(_,i)=>[i+1,...names.map(()=>i+1)].join(','));
+  const csv = ['metric,'+names.join(','),...rows].join('\n');
+  const result = analyzeCsvText(csv,{target:'metric',predictor:'signal_256'});
+  assert.equal(result.checkedPredictorColumns,256);
+  assert.deepEqual(result.correlations,[]);
+  assert.ok(result.warnings.some(w=>w.includes('first 256')));
+});
+
+test('rejects nonexistent, nonnumeric and self-correlation predictor selections', () => {
+  for (const predictor of ['missing','region','revenue']) {
+    assert.throws(()=>analyzeCsvText(sample,{target:'revenue',predictor}), /Correlation predictor/);
+  }
+});
+
 test('processes 150 media predictors without materializing CSV rows', () => {
   const names = Array.from({length:150}, (_,i)=>'media_'+i);
   const lines = ['date,revenue,'+names.join(',')];

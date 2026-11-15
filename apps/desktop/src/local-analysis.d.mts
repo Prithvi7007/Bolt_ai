@@ -2,9 +2,10 @@ export type AnalysisOptions = {
   target: string;
   dimension?: string | null;
   dateColumn?: string | null;
+  predictor?: string | null;
 };
 export type CorrelationRow = {column: string; pairedRows: number; correlation: number};
-export type GroupRow = {label: string; rows: number; sum: number; mean: number};
+export type GroupRow = {label: string; isOverflow: boolean; rows: number; sum: number; mean: number};
 export type TimelineRow = {date: string; rows: number; sum: number; mean: number};
 export type LocalAnalysisReport = {
   target: string;
