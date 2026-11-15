@@ -2,11 +2,12 @@ from fastapi.testclient import TestClient
 import pytest
 
 from bolt.enterprise_service import create_enterprise_app
+from bolt.memory import SessionStore
 
 
 def enterprise_env(tmp_path):
     return {
-        "BOLT_DB_PATH": str(tmp_path / "enterprise.db"),
+        "BOLT_DATABASE_URL": "postgresql://bolt:secret@db/bolt",
         "BOLT_ARTIFACT_PATH": str(tmp_path / "artifacts"),
         "BOLT_PROXY_TOKEN": "p" * 40,
         "BOLT_ALLOWED_ROLES": "BOLT_ANALYST,BOLT_ADMIN",
@@ -23,11 +24,12 @@ def enterprise_env(tmp_path):
 
 def test_enterprise_factory_requires_complete_environment(tmp_path):
     with pytest.raises(ValueError):
-        create_enterprise_app({"BOLT_DB_PATH": str(tmp_path / "bad.db")})
+        create_enterprise_app({"BOLT_DATABASE_URL": "postgresql://db/bolt"})
 
 
 def test_enterprise_factory_wires_identity_and_disabled_optional_model(tmp_path):
-    client = TestClient(create_enterprise_app(enterprise_env(tmp_path)))
+    store = SessionStore(tmp_path / "enterprise-test.db")
+    client = TestClient(create_enterprise_app(enterprise_env(tmp_path), store=store))
     headers = {
         "X-Bolt-User": "analyst@example.com",
         "X-Bolt-Roles": "BOLT_ANALYST",

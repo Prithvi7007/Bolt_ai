@@ -12,35 +12,64 @@ const ARTIFACT_DOWNLOAD_PATH = /^\/v1\/artifacts\/[a-f0-9]{32}\?session_id=[a-f0
 function validateRequest(route, options = {}) {
   if (typeof route !== 'string' || route.length > 100) throw new Error('Unsupported BOLT API route');
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid request');
-  const allowed = new Map([['/health', 'GET'], ['/v1/catalog', 'GET'], ['/v1/sessions', null], ['/v1/chat', 'POST'], ['/v1/presentations', 'POST']]);
+  const allowed = new Map([
+    ['/health', ['GET']],
+    ['/v1/catalog', ['GET']],
+    ['/v1/data-sources', ['GET']],
+    ['/v1/sessions', ['GET', 'POST']],
+    ['/v1/chat', ['POST']],
+    ['/v1/presentations', ['POST']],
+    ['/v1/charts', ['POST']],
+    ['/v1/preferences', ['GET', 'POST']],
+    ['/v1/memory/search', ['POST']],
+    ['/v1/memory/erase', ['POST']],
+    ['/v1/collections', ['GET', 'POST']],
+    ['/v1/collection-items', ['POST']],
+    ['/v1/artifacts/all', ['GET']],
+  ]);
   const method = options.method === undefined ? 'GET' : options.method;
   if (method !== 'GET' && method !== 'POST') throw new Error('Unsupported API method');
   if (SESSION_PATH.test(route) || ARTIFACT_LIST_PATH.test(route) || ARTIFACT_DOWNLOAD_PATH.test(route)) {
     if (method !== 'GET') throw new Error('Scoped resource is read-only');
-  } else if (!allowed.has(route)) {
-    throw new Error('Unsupported BOLT API route');
-  } else if (route === '/v1/sessions' ? !['GET', 'POST'].includes(method) : allowed.get(route) !== method) {
-    throw new Error('Unsupported API method for route');
+  } else if (!allowed.has(route) || !allowed.get(route).includes(method)) {
+    throw new Error('Unsupported BOLT API route or method');
   }
   let body;
-  if (method === 'POST' && (route === '/v1/chat' || route === '/v1/presentations')) {
+  if (method === 'POST' && options.body !== undefined) {
     if (typeof options.body !== 'string' || options.body.length > 4000) throw new Error('Invalid request payload');
     let data;
     try { data = JSON.parse(options.body); } catch { throw new Error('Invalid JSON payload'); }
-    const validSession = data && typeof data.session_id === 'string' && /^[a-f0-9]{32}$/.test(data.session_id);
-    const validChat = route === '/v1/chat'
-      && Object.keys(data || {}).sort().join(',') === 'question,session_id'
-      && typeof data.question === 'string' && data.question.length >= 1 && data.question.length <= 2000;
-    const validPresentation = route === '/v1/presentations'
-      && Object.keys(data || {}).sort().join(',') === 'session_id,title'
-      && typeof data.title === 'string' && data.title.trim().length >= 1 && data.title.length <= 140;
-    if (!data || typeof data !== 'object' || Array.isArray(data)
-        || !validSession || (!validChat && !validPresentation)) {
-      throw new Error('Invalid request fields');
-    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid request fields');
+    const keys = Object.keys(data).sort().join(',');
+    const isId = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+    const validators = {
+      '/v1/sessions': () => keys === '',
+      '/v1/chat': () => keys === 'question,session_id' && isId(data.session_id)
+        && typeof data.question === 'string' && data.question.length >= 1 && data.question.length <= 2000,
+      '/v1/presentations': () => keys === 'session_id,title' && isId(data.session_id)
+        && typeof data.title === 'string' && data.title.trim().length >= 1 && data.title.length <= 140,
+      '/v1/charts': () => keys === 'query_id,session_id' && isId(data.session_id)
+        && typeof data.query_id === 'string' && data.query_id.length >= 1 && data.query_id.length <= 200,
+      '/v1/preferences': () => keys === 'key,value' && typeof data.key === 'string'
+        && data.key.length >= 1 && data.key.length <= 100,
+      '/v1/memory/search': () => keys === 'limit,query' && typeof data.query === 'string'
+        && data.query.length >= 1 && data.query.length <= 200
+        && Number.isInteger(data.limit) && data.limit >= 1 && data.limit <= 20,
+      '/v1/memory/erase': () => keys === 'confirmation'
+        && data.confirmation === 'ERASE MY BOLT MEMORY',
+      '/v1/collections': () => keys === 'name' && typeof data.name === 'string'
+        && data.name.trim().length >= 1 && data.name.length <= 100,
+      '/v1/collection-items': () => keys === 'collection_id,result_ref,session_id,title'
+        && isId(data.collection_id) && isId(data.session_id)
+        && typeof data.result_ref === 'string' && data.result_ref.length >= 1 && data.result_ref.length <= 200
+        && typeof data.title === 'string' && data.title.trim().length >= 1 && data.title.length <= 140,
+    };
+    if (!validators[route] || !validators[route]()) throw new Error('Invalid request fields');
     body = JSON.stringify(data);
   } else if (options.body !== undefined) {
     throw new Error('Body is not permitted for this request');
+  } else if (method === 'POST' && route !== '/v1/sessions') {
+    throw new Error('Request body is required');
   }
   return { method, body };
 }
@@ -117,7 +146,7 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
       if (Number.isFinite(length) && length > MAX_RESULT_BYTES) throw new Error('BOLT API response too large');
       const raw = await response.text();
       if (Buffer.byteLength(raw, 'utf8') > MAX_RESULT_BYTES) throw new Error('BOLT API response too large');
-      return {ok: response.ok, status: response.status, data: JSON.parse(raw)};
+      return {ok: response.ok, status: response.status, data: raw ? JSON.parse(raw) : null};
     };
     let health;
     for (let attempt = 0; attempt < 50; attempt++) {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 from math import sqrt
 from pathlib import Path
+from time import perf_counter
 
 from .data import load_fixture
 from .engine import answer
@@ -116,4 +117,109 @@ def evaluate_synthetic(fixture_path: Path) -> dict:
             "accuracy_delta": 0.0,
         },
         "orchestration": {"max_tool_calls": 4, "configured_limit": 10},
+    }
+
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, round((len(ordered) - 1) * percentile)))
+    return ordered[index]
+
+
+def evaluate_approved_cases(cases: list[dict], runner, *, clock=perf_counter) -> dict:
+    """Evaluate adjudicated questions while omitting question text from the report."""
+    if not cases:
+        raise ValueError("At least one approved evaluation case is required")
+    outcomes = []
+    latencies = []
+    correct = 0
+    grounded = 0
+    supported = 0
+    prompt_tokens = completion_tokens = cached_tokens = 0
+    query_count = 0
+    warehouse_credits = 0.0
+    bytes_scanned = 0
+    tool_calls = []
+
+    for case in cases:
+        case_id = str(case.get("case_id") or "").strip()
+        question = str(case.get("question") or "").strip()
+        expected_status = str(case.get("expected_status") or "").strip()
+        if not case_id or not question or expected_status not in {"ok", "unsupported", "no_data"}:
+            raise ValueError("Each approved case requires an ID, question and expected status")
+        started = clock()
+        result = runner(question)
+        elapsed_ms = max(0.0, (clock() - started) * 1000)
+        latencies.append(elapsed_ms)
+
+        actual_status = result.get("status")
+        expected_dimension = case.get("expected_dimension")
+        columns = ((result.get("data") or {}).get("columns") or [])
+        dimension_ok = expected_dimension is None or (
+            bool(columns) and columns[0] == expected_dimension
+        )
+        is_correct = actual_status == expected_status and dimension_ok
+        correct += int(is_correct)
+
+        evidence = result.get("evidence")
+        if actual_status == "ok":
+            supported += 1
+            if evidence and evidence.get("query_id") and evidence.get("source"):
+                grounded += 1
+        if evidence and evidence.get("query_id"):
+            query_count += 1
+            warehouse_credits += float(evidence.get("warehouse_credits") or 0)
+            bytes_scanned += int(evidence.get("bytes_scanned") or 0)
+
+        cost = result.get("cost") or {}
+        prompt_tokens += int(cost.get("prompt_tokens") or 0)
+        completion_tokens += int(cost.get("completion_tokens") or 0)
+        cached_tokens += int(cost.get("cached_tokens") or 0)
+        tool_calls.append(int(result.get("tool_calls") or 0))
+        outcomes.append({
+            "case_id": case_id,
+            "correct": is_correct,
+            "status": actual_status,
+            "latency_ms": round(elapsed_ms, 3),
+            "grounded": bool(evidence and evidence.get("query_id") and evidence.get("source")),
+        })
+
+    low, high = _wilson(correct, len(cases))
+    return {
+        "question_set": {
+            "correct": correct,
+            "denominator": len(cases),
+            "accuracy": correct / len(cases),
+            "wilson_95_low": low,
+            "wilson_95_high": high,
+        },
+        "provenance": {
+            "grounded": grounded,
+            "denominator": supported,
+            "rate": grounded / supported if supported else 1.0,
+        },
+        "latency_ms": {
+            "p50": round(_percentile(latencies, 0.50), 3),
+            "p95": round(_percentile(latencies, 0.95), 3),
+            "maximum": round(max(latencies), 3),
+        },
+        "tokens": {
+            "prompt": prompt_tokens,
+            "completion": completion_tokens,
+            "cached": cached_tokens,
+        },
+        "queries": {
+            "count": query_count,
+            "warehouse_credits": warehouse_credits,
+            "bytes_scanned": bytes_scanned,
+        },
+        "orchestration": {
+            "max_tool_calls": max(tool_calls, default=0),
+            "average_tool_calls": sum(tool_calls) / len(tool_calls),
+        },
+        "cases": outcomes,
+        "privacy": {"question_content_in_report": False},
     }

@@ -25,7 +25,7 @@ Do not expose this process directly to the public internet. Place it behind the 
 
 | Variable | Purpose |
 |---|---|
-| BOLT_DB_PATH | Server-side ledger database path for the current reference implementation |
+| BOLT_DATABASE_URL | Secret-store supplied PostgreSQL connection URL for the enterprise ledger |
 | BOLT_ARTIFACT_PATH | Server-side scoped artifact directory |
 | BOLT_PROXY_TOKEN | At least 32 characters; authenticates identity-proxy requests to BOLT |
 | BOLT_ALLOWED_ROLES | Comma-separated approved application roles |
@@ -44,6 +44,16 @@ Optional query bounds: BOLT_QUERY_TIMEOUT_SECONDS and BOLT_QUERY_MAX_ROWS. Code 
 
 ## Identity contract
 
-The upstream gateway supplies X-Bolt-User, X-Bolt-Roles and X-Bolt-Proxy-Token only after successful organization authentication. Missing proxy authentication returns 401; roles outside BOLT_ALLOWED_ROLES return 403. Sessions, audit events and presentation artifacts are scoped to the resolved identity.
+The upstream gateway supplies X-Bolt-User, X-Bolt-Roles and X-Bolt-Proxy-Token only after successful organization authentication. Missing proxy authentication returns 401; roles outside BOLT_ALLOWED_ROLES return 403. Sessions, working summaries, preferences, collections, audit events and chart/presentation artifacts are stored in PostgreSQL and scoped to the resolved identity.
 
 The proxy token is defense in depth, not a replacement for SSO, network controls or TLS.
+
+## Approved benchmark
+
+Before activation, prepare an adjudicated JSON case file outside the repository and run:
+
+```bash
+python scripts/evaluate_approved.py --cases approved-cases.json --base-url https://approved-bolt.example --output evaluation-report.json
+```
+
+Supply authentication only through BOLT_BENCHMARK_AUTHORIZATION or the BOLT_BENCHMARK_PROXY_TOKEN, BOLT_BENCHMARK_USER and BOLT_BENCHMARK_ROLES environment variables. The report contains case IDs and aggregate outcomes, not question text. It measures accuracy with a Wilson interval, provenance, latency, model tokens, query count, optional warehouse credits/bytes and tool-call bounds.

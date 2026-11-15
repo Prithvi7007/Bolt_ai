@@ -7,11 +7,12 @@ from collections.abc import Mapping
 from .api import create_app
 from .auth import EnterpriseIdentityResolver
 from .model_gateway import GatewayConfig, OpenAICompatibleGateway
+from .postgres_memory import PostgresSessionStore
 from .snowflake_adapter import SnowflakeConfig, SnowflakeQueryAdapter
 
 
 _REQUIRED = (
-    "BOLT_DB_PATH",
+    "BOLT_DATABASE_URL",
     "BOLT_ARTIFACT_PATH",
     "BOLT_PROXY_TOKEN",
     "BOLT_ALLOWED_ROLES",
@@ -26,7 +27,7 @@ _REQUIRED = (
 )
 
 
-def create_enterprise_app(environ: Mapping[str, str] | None = None):
+def create_enterprise_app(environ: Mapping[str, str] | None = None, *, store=None):
     env = dict(os.environ if environ is None else environ)
     missing = [key for key in _REQUIRED if not env.get(key, "").strip()]
     if missing:
@@ -59,10 +60,12 @@ def create_enterprise_app(environ: Mapping[str, str] | None = None):
             token=env.get("BOLT_MODEL_TOKEN", ""),
             timeout_seconds=int(env.get("BOLT_MODEL_TIMEOUT_SECONDS", "30")),
         ))
+    store = store or PostgresSessionStore(env["BOLT_DATABASE_URL"])
     return create_app(
-        Path(env["BOLT_DB_PATH"]),
+        None,
         artifact_path=Path(env["BOLT_ARTIFACT_PATH"]),
         query_adapter=snowflake,
         model_gateway=gateway,
         identity_resolver=identity,
+        store=store,
     )
