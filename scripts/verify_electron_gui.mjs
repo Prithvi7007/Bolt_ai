@@ -210,6 +210,32 @@ async function main() {
       'document.querySelector(".session-button.selected")?.textContent?.trim()'
     );
     assert.ok(session?.startsWith('Conversation '), 'New session must appear in sidebar');
+    // Exercise the local-only Data Lab with a generated CSV, never company data.
+    const openedLab = await first.eval(
+      '(() => { const b = [...document.querySelectorAll("button.workspace-button")].find(x => x.textContent.includes("Data Lab")); if (!b) return false; b.click(); return true; })()'
+    );
+    assert.equal(openedLab, true, 'Data Lab navigation must work');
+    await eventually(async () => await first.eval(
+      'getComputedStyle(document.querySelector("main.data-lab")).display !== "none"'
+    ), 'Data Lab screen is displayed');
+    const imported = await first.eval(
+      '(() => { const input = document.querySelector("#bolt-csv-import"); if (!input) return false; const csv = ["month,attendance", "2026-01,100", "2026-02,120", "2026-03,130"].join(String.fromCharCode(10)); const f = new File([csv], "synthetic-lab.csv", {type:"text/csv"}); const d = new DataTransfer(); d.items.add(f); input.files = d.files; input.dispatchEvent(new Event("change", {bubbles:true})); return true; })()'
+    );
+    assert.equal(imported, true, 'CSV file input must accept local data');
+    await eventually(async () => await first.eval(
+      'document.querySelector(".lab-result-header h2")?.textContent?.includes("synthetic-lab.csv") && document.querySelector("#bolt-target")?.value === "attendance"'
+    ), 'Data Lab profiles synthetic CSV and identifies attendance as a candidate target');
+    const approved = await first.eval(
+      '(() => { document.querySelector(".lab-target-control button")?.click(); return document.querySelector("#bolt-target")?.value; })()'
+    );
+    assert.equal(approved, 'attendance', 'Target selection must be available');
+    await eventually(async () => await first.eval(
+      'document.querySelector(".lab-approved")?.textContent?.includes("Target approved: attendance")'
+    ), 'Data Lab target approval appears in the UI');
+    await first.eval(
+      '([...document.querySelectorAll("button.workspace-button")].find(x => x.textContent.includes("Analyst")))?.click()'
+    );
+    console.log('PASS: packaged Electron Data Lab CSV import, local profile, and target approval');
     console.log('PASS: packaged Electron window, restricted IPC, revenue chart, SQL and data inspector');
     await shutdown(running);
     running = null;
