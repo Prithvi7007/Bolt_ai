@@ -1,0 +1,26 @@
+"""Guard the local-only Data Lab's Node regression suite and privacy boundaries."""
+from pathlib import Path
+import subprocess
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_local_csv_profiler_regressions():
+    suite = ROOT / "apps" / "desktop" / "src" / "dataset-understanding.test.mjs"
+    result = subprocess.run(
+        ["node", "--test", str(suite)],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
+
+
+def test_csv_data_is_never_transmitted_to_the_synthetic_backend():
+    profiler = (ROOT / "apps" / "desktop" / "src" / "dataset-understanding.mjs").read_text()
+    lab = (ROOT / "apps" / "desktop" / "src" / "DatasetLab.tsx").read_text()
+    assert "profileCsvFile(file)" in lab
+    assert "File" in lab
+    for network_call in ("fetch(", "XMLHttpRequest", "sendBeacon(", "boltApi.request("):
+        assert network_call not in profiler
+        assert network_call not in lab
+    assert "target" in lab.lower() and "Approve target" in lab
+    assert "No file contents are sent" in lab

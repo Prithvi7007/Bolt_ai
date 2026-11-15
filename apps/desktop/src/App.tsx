@@ -2,6 +2,8 @@ import {useEffect, useState, type FormEvent, type KeyboardEvent} from 'react';
 import {Activity, ArrowUp, BarChart3, Check, ChevronDown, CircleHelp, Clock3, Database,
         FileText, Layers, MessageSquareText, PanelRightClose, PanelRightOpen, Plus,
         Sparkles, Table2, TerminalSquare, Zap} from 'lucide-react';
+import DatasetLab from './DatasetLab';
+import './sidebar-workspace.css';
 
 type Evidence = {source:string; query_id:string; sql:string; parameters:Record<string,string>;
   metric_id:string; row_count:number; is_synthetic:boolean};
@@ -59,6 +61,7 @@ function ResultChart({chart}:{chart:Chart}){
 }
 
 export default function App(){
+  const [workspace,setWorkspace]=useState<'analyst'|'data'>('analyst');
   const [sessions,setSessions]=useState<Session[]>([]);
   const [sid,setSid]=useState<string>('');
   const [turns,setTurns]=useState<Turn[]>([]);
@@ -119,7 +122,8 @@ export default function App(){
       <div className="brand"><span className="brand-symbol"><Zap size={20} fill="currentColor"/></span><div><strong>BOLT</strong><small>INTELLIGENCE</small></div></div>
       <button className="new-chat" onClick={()=>void createSession()}><Plus size={16}/> New conversation</button>
       <div className="sidebar-section-title">WORKSPACE</div>
-      <div className="nav-active"><MessageSquareText size={17}/> Analyst <span className="nav-tag">01</span></div>
+      <button type="button" className={'workspace-button '+(workspace==='analyst'?'nav-active':'nav-text')} onClick={()=>setWorkspace('analyst')}><MessageSquareText size={17}/> Analyst <span className="nav-tag">01</span></button>
+      <button type="button" className={'workspace-button '+(workspace==='data'?'nav-active':'nav-text')} onClick={()=>setWorkspace('data')}><Database size={17}/> Data Lab <span className="nav-tag">02</span></button>
       <div className="nav-text"><BarChart3 size={17}/> Insights <span className="muted-small">Next slice</span></div>
       <div className="nav-text"><Layers size={17}/> Presentations <span className="muted-small">Next slice</span></div>
       <div className="sidebar-section-title past-title">RECENT SESSIONS</div>
@@ -128,13 +132,13 @@ export default function App(){
           <Clock3 size={14}/> <span>Conversation {s.session_id.slice(0,6)}</span>
         </button>)}
       </nav>
-      <div className="sidebar-footer"><span className="status-light"/> Synthetic sandbox <span className="version">v0.1</span></div>
+      <div className="sidebar-footer"><span className="status-light"/> {workspace==='data'?'Local CSV profile':'Synthetic sandbox'} <span className="version">Prototype</span></div>
     </aside>
     <div className="main-column">
-      <header className="topbar"><div className="crumb"><span>Workspace</span><span className="crumb-sep">/</span><strong>AI Analyst</strong><ChevronDown size={13}/></div>
-        <div className="top-actions"><span className="chip"><Database size={14}/> Demo dataset</span><span className="chip"><Activity size={14}/> 0 LLM tokens</span><button className="icon-button" aria-label={showInspector?'Hide inspector':'Show inspector'} onClick={()=>setShowInspector(!showInspector)}>{showInspector?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button></div>
+      <header className="topbar"><div className="crumb"><span>Workspace</span><span className="crumb-sep">/</span><strong>{workspace==='data'?'Data Lab':'AI Analyst'}</strong><ChevronDown size={13}/></div>
+        <div className="top-actions"><span className="chip"><Database size={14}/> {workspace==='data'?'Local CSV':'Demo dataset'}</span><span className="chip"><Activity size={14}/> 0 LLM tokens</span>{workspace==='analyst'&&<button className="icon-button" aria-label={showInspector?'Hide inspector':'Show inspector'} onClick={()=>setShowInspector(!showInspector)}>{showInspector?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>}</div>
       </header>
-      <main className="conversation" aria-label="BOLT analyst conversation">
+      <main className="conversation" aria-label="BOLT analyst conversation" style={{display:workspace==='analyst'?undefined:'none'}}>
         {turns.length===0&&<section className="welcome"><div className="welcome-symbol"><Zap size={30} fill="currentColor"/></div>
           <p className="eyebrow">YOUR AI DATA ANALYST</p><h1>Ask anything about your data.</h1>
           <p className="lead">Go from questions to evidence-backed insights in one conversation. Start with synthetic revenue data; enterprise connections come later.</p>
@@ -152,13 +156,14 @@ export default function App(){
         {busy&&<div className="loading" role="status"><span className="pulse"/> Validating query and calculating results…</div>}
         {error&&<div className="error-notice" role="alert">{error}</div>}
       </main>
-      <div className="composer-area"><form className="composer" onSubmit={submitForm}><textarea value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={onComposerKey}
+      <div className="composer-area" style={{display:workspace==='analyst'?undefined:'none'}}><form className="composer" onSubmit={submitForm}><textarea value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={onComposerKey}
         aria-label="Ask BOLT a question" placeholder="Ask a follow-up question..." rows={2} disabled={busy||healthy!=='online'}/>
         <div className="composer-bottom"><span><Sparkles size={14}/> Read-only demo analytics · Ctrl+Enter to send</span><button type="submit" className="send-button" disabled={busy||!question.trim()||healthy!=='online'} aria-label="Send question"><ArrowUp size={19}/></button></div></form>
         <div className="composer-disclaimer">BOLT prototype · Synthetic data only · No Snowflake or LLM connection</div>
       </div>
+      <div style={{display:workspace==='data'?'contents':'none'}}><DatasetLab/></div>
     </div>
-    {showInspector&&<aside className="inspector" aria-label="Evidence inspector">
+    {showInspector&&workspace==='analyst'&&<aside className="inspector" aria-label="Evidence inspector">
       <div className="inspector-header"><div><span className="eyebrow">SELECTED QUERY EVIDENCE</span><strong>Evidence inspector</strong></div><CircleHelp size={17}/></div>
       <div className="inspector-tabs" role="tablist" aria-label="Evidence tabs">
         <button role="tab" aria-selected={tab==='sql'} className={tab==='sql'?'active':''} onClick={()=>setTab('sql')}><TerminalSquare size={14}/> SQL</button>
