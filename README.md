@@ -1,10 +1,21 @@
-# ⚡ BOLT AI — v0.1 Synthetic Prototype
+# ⚡ BOLT AI — Synthetic Desktop Intelligence Workbench
 
 **Ask. Investigate. Prove. Present.**
 
-BOLT is an Electron + React desktop intelligence workbench backed by a Python FastAPI analytics service. This is a **working synthetic-data prototype**, not a live Snowflake or LLM integration. The first slice demonstrates evidence-grounded answers, persisted session history, small structured context state, charts and SQL inspection.
+BOLT is an Electron + React desktop intelligence workbench backed by a Python FastAPI analytics service. This is a **synthetic-data prototype** with validated native builds for Windows and Linux, not a live Snowflake or LLM integration. The first slice demonstrates evidence-grounded answers, persisted session history, small structured context state, charts and SQL inspection.
 
 > **No real company data, API keys, Snowflake connection, or LLM model is included.** All screenshots, numbers, charts and examples use a generated synthetic revenue fixture.
+
+## Download a native test build
+
+GitHub Actions builds unsigned **Windows NSIS x64** and **Linux AppImage x64** packages from source. Successful jobs run the Python/API and Electron tests and then launch the **bundled** Python executable to verify authenticated loopback health, synthetic revenue and SQL evidence, and SQLite session history.
+
+1. Open [BOLT native installer build runs](https://github.com/Prithvi7007/Bolt_ai/actions/workflows/desktop-installers.yml).
+2. Select a **successful** run for the commit you want to test, ideally a `main` build.
+3. Under **Artifacts**, download `BOLT-AI-Windows-NSIS-unsigned` or `BOLT-AI-Linux-AppImage-unsigned`, then extract the ZIP.
+4. Test on a personal or disposable computer, not a managed work device.
+
+These are **unsigned** test installers and may trigger SmartScreen or antivirus warnings. The installer currently uses version `0.1.0` from `apps/desktop/package.json`, even though the desktop runtime and packaging workflow have advanced through later development PRs. Passing CI **does not** verify full graphical launch, install/uninstall behavior, signing, auto-updates, or production readiness.
 
 ## See the prototype (fastest path)
 
@@ -27,17 +38,17 @@ Then open `http://127.0.0.1:8080/apps/desktop/preview.html`.
 
 ## Run the actual Electron desktop app
 
-With Node.js 22+ and npm installed, start FastAPI as above. In a second terminal:
+With Node.js 22+ and npm installed, first install the Python service requirements from the repository root (`python -m pip install -r services/api/requirements.txt`), then run:
 
 ```bash
 cd apps/desktop
-npm install
+npm ci
 npm run dev
 ```
 
-This launches Vite on localhost and then Electron. On Windows PowerShell, use the same commands in separate PowerShell windows. `npm run build` builds the React renderer, and `npm start` starts Electron against the built `dist/index.html` (with the API running).
+This launches Vite and Electron. **Electron automatically starts and authenticates the local Python service** on a random loopback port, using a restricted preload IPC API; the React renderer never receives the bearer token. There is no need to start FastAPI separately for the Electron developer app. The standalone browser preview above still requires the manually launched development API.
 
-**Build verification limitation:** The authoring environment cannot access the npm registry, so React/Electron packages could not be installed or built here. The Python backend and browser preview were verified independently. Do not treat the Electron distributable as built or tested.
+For a native installer, install `services/api/requirements-build.txt` in Python, then run `npm run pack:win` (on Windows) or `npm run pack:linux` (on Linux) inside `apps/desktop`. PyInstaller must run on the target OS. See [desktop runtime details](docs/desktop-sidecar-v02.md) and [native installer verification](docs/native-installers-ci.md).
 
 ## Prototype features
 
@@ -71,17 +82,17 @@ python scripts/smoke_test.py
 ## Architecture
 
 ```text
-Electron main (sandboxed window; no database credentials)
-  └─ React + TypeScript analyst workspace
-       └─ http://127.0.0.1:8787 (developer-local, synthetic only)
+Electron main (sandboxed window; random bearer token held outside renderer)
+  ├─ React + TypeScript analyst workspace (restricted preload IPC)
+  └─ managed Python FastAPI child on a random 127.0.0.1 port
             └─ FastAPI → query intent router → allowlisted SQL templates
                        ├─ read-only synthetic SQLite fixture
                        └─ session SQLite ledger + bounded memory state
 ```
 
-## What is *not* in v0.1
+## Current prototype limitations
 
-Snowflake/Cortex, live LLM calls, LangGraph execution, PPTX generation, production identity/SSO, audit policies, organizational access control, automatic queries across unknown schemas and real token optimization measurement are **future milestones**, not claimed features. The preview is not suitable for real company data. Production requires a server-side authorization model, CORS hardening, approved identity, permissions, secure transport and approved model hosting.
+Snowflake/Cortex, live LLM calls, LangGraph execution, PPTX generation, production identity/SSO, audit policies, organizational access control, automatic queries across unknown schemas and real token optimization measurement are **future milestones**, not claimed features. Neither the preview nor the packaged synthetic prototype is suitable for real company data. Production requires approved identity, authorization, permissions, safe data connectors, model hosting, telemetry and an independent security review.
 
 ## Engineering records
 
@@ -89,4 +100,4 @@ Snowflake/Cortex, live LLM calls, LangGraph execution, PPTX generation, producti
 - Slice A plan: `docs/superpowers/plans/2026-11-13-bolt-slice-a.md`
 - Impact/measurement plan: `docs/impact/prototype-metrics.md`
 
-The prototype source is published in `Prithvi7007/Bolt_ai` on the `feature/bolt-v01-synthetic-analyst` branch for review in draft PR #1. This is source code, not a deployed application or compiled Electron release. Keep secrets and business data out of Git.
+The prototype source is published in [Prithvi7007/Bolt_ai](https://github.com/Prithvi7007/Bolt_ai). Native CI builds and packaged-backend smoke tests validate the **synthetic** workflow, not a graphical end-to-end user session. Keep secrets and business data out of Git.
