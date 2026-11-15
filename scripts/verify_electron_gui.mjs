@@ -232,6 +232,16 @@ async function main() {
     await eventually(async () => await first.eval(
       'document.querySelector(".lab-approved")?.textContent?.includes("Target approved: attendance")'
     ), 'Data Lab target approval appears in the UI');
+    const analyzed = await first.eval(
+      '(() => { const b = document.querySelector(".lab-analyze-button"); if (!b) return false; b.click(); return true; })()'
+    );
+    assert.equal(analyzed, true, 'Approved target can run a local analysis');
+    await eventually(async () => await first.eval(
+      'document.querySelector(".lab-analysis-provenance")?.textContent?.includes("3 rows") && document.querySelector(".lab-analysis-kpis")?.textContent?.includes("116.67")'
+    ), 'Local analysis calculates the real synthetic CSV mean rather than demo data');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-series-dates")?.textContent?.includes("2026-01")'
+    ), true, 'Local analysis renders observed monthly date series');
     await first.eval(
       '([...document.querySelectorAll("button.workspace-button")].find(x => x.textContent.includes("Analyst")))?.click()'
     );
