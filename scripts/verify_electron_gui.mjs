@@ -242,6 +242,16 @@ async function main() {
     assert.equal(await first.eval(
       'document.querySelector(".lab-series-dates")?.textContent?.includes("2026-01")'
     ), true, 'Local analysis renders observed monthly date series');
+    const localQuestionSent = await first.eval(
+      '(() => { const b = [...document.querySelectorAll(".lab-ask-examples button")].find(x => x.textContent.includes("total attendance")); if (!b) return false; b.click(); return true; })()'
+    );
+    assert.equal(localQuestionSent, true, 'The real-CSV question prompt must be clickable');
+    await eventually(async () => await first.eval(
+      'document.querySelector(".lab-ask-answer .lab-ask-primary")?.textContent?.includes("350") && document.querySelector(".lab-ask-proof")?.textContent?.includes("Sum")'
+    ), 'Packaged Data Lab answers total attendance from actual local CSV with formula evidence');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-evidence")?.textContent?.includes("3 numeric target rows")'
+    ), true, 'Real CSV question contains an evidence-backed row count');
     await first.eval(
       '([...document.querySelectorAll("button.workspace-button")].find(x => x.textContent.includes("Analyst")))?.click()'
     );

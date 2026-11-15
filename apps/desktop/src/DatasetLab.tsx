@@ -3,6 +3,7 @@ import {Activity, Check, ChevronRight, Database, FileSpreadsheet, HardDriveDownl
         Info, RefreshCcw, ShieldCheck, Sparkles, UploadCloud, AlertTriangle} from 'lucide-react';
 import {profileCsvFile, type DatasetProfile} from './dataset-understanding.mjs';
 import LocalAnalysis from './LocalAnalysis';
+import AskYourData from './AskYourData';
 import './dataset-lab.css';
 
 function Metric({label, value, detail}: {label: string; value: string; detail: string}) {
@@ -135,14 +136,16 @@ export default function DatasetLab() {
 
         {approvedTarget && sourceFile && <LocalAnalysis key={approvedTarget} file={sourceFile} profile={profile} target={approvedTarget}/>}
 
+        {approvedTarget && sourceFile && <AskYourData key={"ask:"+approvedTarget} file={sourceFile} profile={profile} target={approvedTarget}/>}
+
         <section className="lab-panel lab-preview-panel" aria-label="CSV data preview">
-          <div className="lab-panel-title"><span>06 / VERIFY</span><h3>Source preview</h3></div>
+          <div className="lab-panel-title"><span>07 / VERIFY</span><h3>Source preview</h3></div>
           <div className="lab-table-scroll"><table className="lab-table lab-preview"><thead><tr>{profile.columns.map(col => <th key={col.name}>{col.name}</th>)}</tr></thead>
             <tbody>{profile.preview.map((row, index) => <tr key={index}>{row.map((cell, col) => <td key={col} title={cell}>{cell || '—'}</td>)}</tr>)}</tbody></table></div>
           <p className="lab-table-note">First five valid rows shown. Preview values are truncated to 160 characters; all valid rows contribute to profile statistics. {profile.rejectedRows ? profile.rejectedRows + ' malformed rows were excluded.' : ''}</p>
         </section>
       </>}
-      <div className="lab-bottom-note"><ShieldCheck size={14}/> BOLT Data Lab provides transparent local profiling and descriptive target analysis. The separate Analyst chat still uses synthetic demo data.</div>
+      <div className="lab-bottom-note"><ShieldCheck size={14}/> BOLT Data Lab now supports restricted, local questions about the approved CSV target. The separate Analyst workspace continues to use synthetic demo data; no LLM is used.</div>
     </div>
   </main>;
 }

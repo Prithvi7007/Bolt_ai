@@ -1,0 +1,45 @@
+.lab-ask{margin-top:16px;min-width:0;background:#152238;border:1px solid #2B3B55;border-radius:12px;padding:23px}
+.lab-ask .lab-panel-title h3{display:flex;gap:9px;align-items:center}
+.lab-ask .lab-panel-title h3 svg{color:#8CB6FF}
+.lab-ask-capabilities{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 20px}
+.lab-ask-capabilities span{display:flex;align-items:center;gap:6px;background:#1C3351;border:1px solid #304968;border-radius:18px;color:#A7C4E6;font-size:10px;padding:7px 10px}
+.lab-ask-examples{background:#192A44;border:1px solid #30435C;border-radius:10px;padding:20px}
+.lab-ask-examples p{font-size:10px;letter-spacing:1.3px;color:#99B2D8;font-weight:750;margin:0 0 13px}
+.lab-ask-examples>div{display:flex;flex-wrap:wrap;gap:8px}
+.lab-ask-examples button{font-size:11px;color:#CADDF6;background:#243953;border:1px solid #3C5274;border-radius:8px;padding:10px 12px;text-align:left;cursor:pointer}
+.lab-ask-examples button:hover:not(:disabled){background:#2D4B70;border-color:#6A91D1}
+.lab-ask-examples button:disabled{opacity:.5}
+.lab-ask-transcript{display:flex;flex-direction:column;gap:16px;margin-bottom:22px;max-height:680px;overflow:auto;padding-right:4px}
+.lab-ask-turn{display:flex;align-items:flex-start;flex-direction:column;gap:10px}
+.lab-ask-user{align-self:flex-end;background:#29466C;border:1px solid #45658D;border-radius:15px 15px 3px 15px;color:#E6F0FE;font-size:12px;max-width:90%;padding:12px 15px;margin:0;line-height:1.5;overflow-wrap:anywhere}
+.lab-ask-answer{width:100%;min-width:0;background:#1A2B42;border:1px solid #344965;border-radius:12px;padding:19px}
+.lab-ask-unsupported{background:#2A292F;border-color:#6B594F}
+.lab-ask-answer-title{display:flex;align-items:center;gap:9px;color:#CBF4E6;font-size:13px}
+.lab-ask-answer-title svg{color:#5CD5B1;flex-shrink:0}
+.lab-ask-unsupported .lab-ask-answer-title,.lab-ask-unsupported .lab-ask-answer-title svg{color:#F4D5A5}
+.lab-ask-primary{font-size:13px;color:#E5EFFE;line-height:1.8;margin:13px 0;overflow-wrap:anywhere}
+.lab-ask-table-scroll{overflow-x:auto;max-width:100%;margin:14px 0}
+.lab-ask-table-scroll table{border-collapse:collapse;width:100%;min-width:450px;text-align:left;font-size:11px}
+.lab-ask-table-scroll th{font-size:10px;letter-spacing:.4px;color:#9AB4D4;padding:10px 12px;border-bottom:1px solid #47607D}
+.lab-ask-table-scroll td{padding:12px;color:#DBE6F7;border-bottom:1px solid #31445B;font-variant-numeric:tabular-nums}
+.lab-ask-table-scroll td:first-child{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.lab-ask-proof{display:flex;align-items:flex-start;gap:10px;padding:12px;background:#203951;border-radius:8px;color:#C2D9F7;font-size:11px;line-height:1.6}
+.lab-ask-proof svg{flex-shrink:0;margin-top:1px;color:#8CB6FF}
+.lab-ask-proof b{display:block;color:#E1EDFD;margin-bottom:2px}
+.lab-ask-proof span{display:block}
+.lab-ask-evidence{display:flex;align-items:flex-start;gap:8px;color:#9AB2D2;font-size:10px;line-height:1.5;margin:12px 0 0}
+.lab-ask-evidence svg{flex-shrink:0}
+.lab-ask-caveats{margin-top:13px;color:#AABDD7;font-size:11px}
+.lab-ask-caveats summary{cursor:pointer;font-size:11px}
+.lab-ask-caveats ul{padding-left:22px;line-height:1.6}
+.lab-ask-caveats li{margin-bottom:5px}
+.lab-ask-composer{background:#192A43;border:1px solid #3A5173;border-radius:12px;padding:15px;margin-top:16px}
+.lab-ask-composer textarea{width:100%;resize:vertical;min-height:56px;color:#F0F6FD;background:transparent;border:0;outline:none;line-height:1.5;font:inherit;font-size:13px}
+.lab-ask-composer textarea::placeholder{color:#8298B7}
+.lab-ask-composer>div{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-top:10px;border-top:1px solid #2B3E57}
+.lab-ask-composer small{color:#879EBE;font-size:10px;line-height:1.6}
+.lab-ask-composer button{display:flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;background:#2563EB;border:1px solid #477CFF;color:white;padding:10px 14px;font-size:11px;font-weight:700;flex-shrink:0;cursor:pointer}
+.lab-ask-composer button:disabled{opacity:.4;cursor:not-allowed}
+.lab-ask-running{display:flex;align-items:center;gap:9px;color:#9BB9E1;font-size:11px}
+.lab-ask-bottom{display:flex;align-items:center;gap:8px;font-size:10px;line-height:1.5;color:#839CBF;margin:16px 0 0}
+@media(max-width:720px){.lab-ask{padding:17px}.lab-ask-composer>div{flex-direction:column;align-items:stretch}.lab-ask-composer button{align-self:flex-end}.lab-ask-user{max-width:100%}}
