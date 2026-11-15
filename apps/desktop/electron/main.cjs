@@ -71,27 +71,33 @@ app.whenReady().then(async () => {
       if (!/^[a-f0-9]{32}$/.test(artifactId) || !/^[a-f0-9]{32}$/.test(sessionId)) {
         throw new Error('Invalid artifact reference');
       }
-      const safeName = path.basename(String(filename || 'BOLT_brief.pptx'));
-      if (!safeName.endsWith('.pptx') || safeName.length > 100 || safeName !== filename) {
-        throw new Error('Invalid presentation filename');
+      const safeName = path.basename(String(filename || 'BOLT_artifact.pptx'));
+      const extension = path.extname(safeName).toLowerCase();
+      if (!['.pptx', '.svg'].includes(extension) || safeName.length > 100 || safeName !== filename) {
+        throw new Error('Invalid artifact filename');
       }
       const response = await backend.request(
         `/v1/artifacts/${artifactId}?session_id=${sessionId}`
       );
       if (!response.ok || typeof response.data?.content_base64 !== 'string') {
-        throw new Error('Presentation artifact is unavailable');
+        throw new Error('BOLT artifact is unavailable');
       }
       const bytes = Buffer.from(response.data.content_base64, 'base64');
-      if (bytes.length < 4 || bytes.length > 10_000_000 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
-        throw new Error('Invalid presentation artifact');
+      const validPptx = extension === '.pptx' && bytes[0] === 0x50 && bytes[1] === 0x4b;
+      const validSvg = extension === '.svg'
+        && bytes.subarray(0, 512).toString('utf8').trimStart().startsWith('<svg');
+      if (bytes.length < 4 || bytes.length > 10_000_000 || (!validPptx && !validSvg)) {
+        throw new Error('Invalid BOLT artifact');
       }
       const choice = await dialog.showSaveDialog({
-        title: 'Save BOLT presentation',
+        title: 'Save BOLT artifact',
         defaultPath: safeName,
-        filters: [{name: 'PowerPoint Presentation', extensions: ['pptx']}],
+        filters: extension === '.pptx'
+          ? [{name: 'PowerPoint Presentation', extensions: ['pptx']}]
+          : [{name: 'Scalable Vector Graphic', extensions: ['svg']}],
       });
       if (choice.canceled || !choice.filePath) return {saved:false};
-      fs.writeFileSync(choice.filePath, bytes, {flag:'wx'});
+      fs.writeFileSync(choice.filePath, bytes);
       return {saved:true};
     });
     createWindow();

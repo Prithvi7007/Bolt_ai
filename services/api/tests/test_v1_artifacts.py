@@ -95,3 +95,35 @@ def test_artifact_download_is_session_scoped(tmp_path):
     artifact = client.post("/v1/presentations", json={"session_id": first, "title": "Private brief"}).json()
     response = client.get(f"/v1/artifacts/{artifact['artifact_id']}", params={"session_id": second})
     assert response.status_code == 404
+
+
+def test_chart_api_creates_scoped_downloadable_svg_with_provenance(tmp_path):
+    app = create_app(tmp_path / "bolt.db", FIXTURE, artifact_path=tmp_path / "artifacts")
+    client = TestClient(app)
+    sid = client.post("/v1/sessions").json()["session_id"]
+    analysis = client.post(
+        "/v1/chat",
+        json={"session_id": sid, "question": "Revenue by region in 2026"},
+    ).json()
+    query_id = analysis["evidence"]["query_id"]
+
+    created = client.post(
+        "/v1/charts",
+        json={"session_id": sid, "query_id": query_id},
+    )
+    assert created.status_code == 201
+    artifact = created.json()
+    assert artifact["kind"] == "chart"
+    assert artifact["filename"].endswith(".svg")
+    assert artifact["mime_type"] == "image/svg+xml"
+
+    listing = client.get("/v1/artifacts", params={"session_id": sid}).json()["artifacts"]
+    assert listing[0]["kind"] == "chart"
+    downloaded = client.get(
+        f"/v1/artifacts/{artifact['artifact_id']}",
+        params={"session_id": sid},
+    ).json()
+    svg = base64.b64decode(downloaded["content_base64"]).decode("utf-8")
+    assert svg.startswith("<svg")
+    assert query_id in svg
+    assert "In-state" in svg or "Out-of-state" in svg

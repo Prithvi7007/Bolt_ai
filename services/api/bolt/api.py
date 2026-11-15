@@ -4,13 +4,14 @@ import base64
 import hmac
 import os
 import re
+from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .artifacts import PPTX_MIME, PresentationBuilder
+from .artifacts import ChartBuilder, PPTX_MIME, PresentationBuilder, SVG_MIME
 from .memory import SessionStore
 from .data import load_fixture
 from .engine import answer
@@ -31,6 +32,36 @@ class PresentationRequest(BaseModel):
     title: str = Field(min_length=1, max_length=140)
 
 
+class ChartRequest(BaseModel):
+    session_id: str = Field(min_length=32, max_length=32)
+    query_id: str = Field(min_length=1, max_length=200)
+
+
+class PreferenceRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=100)
+    value: Any
+
+
+class MemorySearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    limit: int = Field(default=10, ge=1, le=20)
+
+
+class MemoryEraseRequest(BaseModel):
+    confirmation: Literal["ERASE MY BOLT MEMORY"]
+
+
+class CollectionRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class CollectionItemRequest(BaseModel):
+    collection_id: str = Field(min_length=32, max_length=32)
+    session_id: str = Field(min_length=32, max_length=32)
+    result_ref: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=140)
+
+
 def create_app(
     db_path: Path | None = None,
     fixture_path: Path | None = None,
@@ -41,6 +72,7 @@ def create_app(
     model_gateway=None,
     identity_resolver=None,
     owner_id: str = "local",
+    store=None,
 ) -> FastAPI:
     db_path = Path(db_path) if db_path else BASE / ".local" / "bolt_sessions.sqlite3"
     fixture_path = (
@@ -61,8 +93,9 @@ def create_app(
     if enterprise and identity_resolver is None:
         raise ValueError("Enterprise query mode requires a fail-closed identity resolver")
 
-    store = SessionStore(db_path)
+    store = store or SessionStore(db_path)
     presentations = PresentationBuilder(artifact_path)
+    charts = ChartBuilder(artifact_path)
     app = FastAPI(title="BOLT AI — Decision Intelligence", version="1.0.0")
 
     if enterprise:
@@ -120,6 +153,27 @@ def create_app(
     def catalog(request: Request):
         return {"metrics": catalog_payload()}
 
+    @app.get("/v1/data-sources")
+    def data_sources(request: Request):
+        if enterprise:
+            source_name = getattr(getattr(query_adapter, "config", None), "source_object", "approved semantic source")
+            sources = [{
+                "source_id": "governed-snowflake",
+                "name": source_name,
+                "mode": "enterprise",
+                "connected": True,
+                "read_only": True,
+            }]
+        else:
+            sources = [{
+                "source_id": "synthetic-revenue",
+                "name": "Synthetic revenue fixture",
+                "mode": "synthetic",
+                "connected": True,
+                "read_only": True,
+            }]
+        return {"sources": sources}
+
     @app.post("/v1/sessions")
     def new_session(request: Request):
         return {"session_id": store.create_session(owner_id=actor(request))}
@@ -135,6 +189,59 @@ def create_app(
         except KeyError:
             raise HTTPException(404, "Session not found")
 
+    @app.get("/v1/preferences")
+    def preferences(request: Request):
+        return {"preferences": store.list_preferences(actor(request))}
+
+    @app.post("/v1/preferences", status_code=204)
+    def save_preference(req: PreferenceRequest, request: Request):
+        store.set_preference(actor(request), req.key, req.value)
+        return Response(status_code=204)
+
+    @app.post("/v1/memory/search")
+    def search_memory(req: MemorySearchRequest, request: Request):
+        return {
+            "results": store.search_memory(
+                actor(request),
+                req.query,
+                limit=req.limit,
+            )
+        }
+
+    @app.post("/v1/memory/erase")
+    def erase_memory(req: MemoryEraseRequest, request: Request):
+        actor_id = actor(request)
+        owned_artifacts = store.list_owner_artifacts(actor_id)
+        erased = store.erase_owner(actor_id)
+        erased.pop("artifact_ids", None)
+        for artifact in owned_artifacts:
+            extension = artifact.get("extension", "pptx")
+            (artifact_path / f"{artifact['artifact_id']}.{extension}").unlink(missing_ok=True)
+        return {"erased": erased}
+
+    @app.post("/v1/collections", status_code=201)
+    def create_collection(req: CollectionRequest, request: Request):
+        collection_id = store.create_collection(actor(request), req.name)
+        return {"collection_id": collection_id, "name": req.name.strip()}
+
+    @app.get("/v1/collections")
+    def collections(request: Request):
+        return {"collections": store.list_collections(actor(request))}
+
+    @app.post("/v1/collection-items", status_code=201)
+    def add_collection_item(req: CollectionItemRequest, request: Request):
+        try:
+            store.add_collection_item(
+                actor(request),
+                req.collection_id,
+                req.session_id,
+                req.result_ref,
+                req.title,
+            )
+        except KeyError:
+            raise HTTPException(404, "Collection or session not found")
+        return {"status": "saved"}
+
     @app.post("/v1/chat")
     def chat(req: ChatRequest, request: Request):
         actor_id = actor(request)
@@ -143,6 +250,15 @@ def create_app(
         if not store.exists(req.session_id, actor_id):
             raise HTTPException(404, "Session not found")
         memory = store.context_snapshot(req.session_id)
+        retrieved = store.search_memory(actor_id, req.question, limit=3)
+        memory["memory_snippets"] = [
+            {
+                "kind": item["kind"],
+                "reference": item["reference"],
+                "summary": item["summary"][:160],
+            }
+            for item in retrieved
+        ]
         store.append_turn(req.session_id, "user", req.question)
         if query_adapter is None:
             with load_fixture(fixture_path) as connection:
@@ -184,6 +300,60 @@ def create_app(
             )
         return result
 
+    @app.post("/v1/charts", status_code=201)
+    def create_chart(req: ChartRequest, request: Request):
+        actor_id = actor(request)
+        try:
+            turns_for_session = store.list_turns(req.session_id, owner_id=actor_id)
+        except KeyError:
+            raise HTTPException(404, "Session not found")
+        analysis = next(
+            (
+                turn["payload"]
+                for turn in reversed(turns_for_session)
+                if turn["role"] == "assistant"
+                and turn["payload"]
+                and (turn["payload"].get("evidence") or {}).get("query_id") == req.query_id
+                and turn["payload"].get("chart")
+            ),
+            None,
+        )
+        if analysis is None:
+            raise HTTPException(404, "Chart analysis not found")
+        try:
+            artifact = charts.build(
+                chart=analysis["chart"],
+                evidence=analysis["evidence"],
+                owner_id=actor_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        store.register_artifact(
+            req.session_id,
+            actor_id,
+            artifact.artifact_id,
+            artifact.filename,
+            artifact.size_bytes,
+            artifact.slide_count,
+            kind=artifact.kind,
+            mime_type=artifact.mime_type,
+            extension=artifact.extension,
+        )
+        store.append_audit(
+            req.session_id,
+            actor_id,
+            "chart.created",
+            {"artifact_id": artifact.artifact_id, "query_id": req.query_id},
+        )
+        return {
+            "artifact_id": artifact.artifact_id,
+            "filename": artifact.filename,
+            "size_bytes": artifact.size_bytes,
+            "slide_count": artifact.slide_count,
+            "mime_type": artifact.mime_type,
+            "kind": artifact.kind,
+        }
+
     @app.post("/v1/presentations", status_code=201)
     def create_presentation(req: PresentationRequest, request: Request):
         actor_id = actor(request)
@@ -216,6 +386,9 @@ def create_app(
             artifact.filename,
             artifact.size_bytes,
             artifact.slide_count,
+            kind="presentation",
+            mime_type=artifact.mime_type,
+            extension="pptx",
         )
         store.append_audit(
             req.session_id,
@@ -234,6 +407,10 @@ def create_app(
             "slide_count": artifact.slide_count,
             "mime_type": artifact.mime_type,
         }
+
+    @app.get("/v1/artifacts/all")
+    def list_all_artifacts(request: Request):
+        return {"artifacts": store.list_owner_artifacts(actor(request))}
 
     @app.get("/v1/artifacts")
     def list_artifacts(session_id: str, request: Request):
@@ -254,12 +431,13 @@ def create_app(
         metadata = allowed.get(artifact_id)
         if metadata is None:
             raise HTTPException(404, "Artifact not found")
-        path = artifact_path / f"{artifact_id}.pptx"
+        extension = metadata.get("extension", "pptx")
+        path = artifact_path / f"{artifact_id}.{extension}"
         if not path.is_file() or path.stat().st_size != metadata["size_bytes"]:
             raise HTTPException(410, "Artifact is unavailable")
         return {
             **metadata,
-            "mime_type": PPTX_MIME,
+            "mime_type": metadata.get("mime_type", PPTX_MIME),
             "content_base64": base64.b64encode(path.read_bytes()).decode("ascii"),
         }
 

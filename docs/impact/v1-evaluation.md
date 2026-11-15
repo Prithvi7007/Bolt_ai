@@ -16,4 +16,6 @@ The versioned synthetic evaluation runs without Snowflake, an LLM or employer da
 | Accuracy delta from bounded context | 0 on the deterministic benchmark |
 | Bounded orchestration | Maximum 4 query executions; configured ceiling 10 |
 
-This benchmark validates the versioned synthetic question set only. It does not establish accuracy on employer terminology, Snowflake semantic models, model-generated plans or production traffic. Before enterprise activation, replace or extend the cases with at least 30 adjudicated organization-approved questions, preserve denominators and confidence intervals, and separately measure latency, Snowflake consumption and model cost.
+This benchmark validates the versioned synthetic question set only. It does not establish accuracy on employer terminology, Snowflake semantic models, model-generated plans or production traffic.
+
+For enterprise validation, use `scripts/evaluate_approved.py` with an external organization-approved case file. The privacy-safe report omits question content and includes denominator, Wilson interval, provenance, p50/p95/max latency, prompt/completion/cached tokens, query count, optional warehouse credits and bytes scanned, plus maximum/average tool calls. Use at least 30 adjudicated questions before activation and retain the case file only under the organization's approved data policy.

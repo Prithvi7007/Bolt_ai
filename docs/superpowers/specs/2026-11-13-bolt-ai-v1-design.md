@@ -8,7 +8,7 @@
 
 ## Implementation record
 
-The safe local desktop and the repository-side enterprise contracts are implemented. This includes governed query validation, a disabled-by-default Snowflake adapter, bounded structured model planning, descriptive investigations, scoped identity/audit/memory records, editable PPTX artifacts, Explore/Present desktop modes and a reproducible evaluation gate.
+The safe local desktop and the repository-side enterprise contracts are implemented. This includes governed query validation, a disabled-by-default Snowflake adapter, bounded structured model planning, descriptive investigations, a PostgreSQL enterprise store, identity-scoped searchable and erasable memory, collections, editable PPTX and SVG artifacts, the complete desktop workspace navigation, and reproducible synthetic and organization-approved evaluation gates.
 
 Implementation does not grant authorization to use employer data. Live activation still requires the open organizational decisions in Section 11: approved SSO/identity proxy, Snowflake objects and credentials, model gateway, retention/export rules, presentation branding, security review, signing and deployment ownership.
 
@@ -58,7 +58,7 @@ For developer mode, FastAPI can run locally with a **synthetic fixture data adap
 
 ```text
 Electron main (secure window, IPC whitelist)
-   └── React renderer: Chat | Insights | SQL Evidence | Artifacts
+   └── React renderer: Analyst | Data Lab | Explore | Present | Collections | Data Sources | Artifacts | Settings
            │ authenticated HTTPS
            ▼
 FastAPI application (server-side auth and policy enforcement)
@@ -67,7 +67,7 @@ FastAPI application (server-side auth and policy enforcement)
    ├── Semantic catalog + approved metric registry
    ├── Read-only Snowflake query adapter / synthetic test adapter
    ├── Chart and PPTX artifact tools
-   ├── PostgreSQL: sessions, summaries, references, audit metadata
+   ├── PostgreSQL: sessions, summaries, preferences, collections, artifacts and audit metadata
    └── Approved model gateway (provider-configurable)
 ```
 
@@ -183,6 +183,7 @@ Contrast checks performed via UI/UX Pro Max: `#F8FAFC` on `#1E40AF` = **8.337:1*
 **Slice B — Data / chart**
 - Configured Snowflake read-only adapter (disabled by default) with `SELECT` query allowlist and query audit metadata.
 - Generate a chart from the same authorized result reference; chart includes descriptive title, units, source and accessible table.
+- Export that chart as a downloadable, owner-scoped SVG artifact with its query provenance embedded in the file.
 
 **Slice C — Presentation**
 - Turn selected stored analyses into 3–5 slides with an editable PPTX, chart/data references and source notes; open/download through Electron.
@@ -194,6 +195,8 @@ Contrast checks performed via UI/UX Pro Max: `#F8FAFC` on `#1E40AF` = **8.337:1*
 - ≤10 tool invocations per typical bounded analysis; explicit safeguards for query cost/timeout.
 - 100% data-derived answers show relevant query ID/source provenance, or explicit uncertainty if not verifiable.
 - Test on Windows (primary), then macOS/Linux smoke tests as development access allows.
+
+The repository includes both a synthetic regression evaluator and an external approved-case runner. The approved runner reports aggregate accuracy with a confidence interval, provenance coverage, latency percentiles, model token usage, query usage and tool-call bounds without retaining or emitting question text.
 
 ## 10. Repository and delivery rules
 
@@ -230,4 +233,4 @@ Protected default branch; short-lived feature branches, reviewable PRs, CI check
 
 Capture before/after in `docs/impact`: average analyst minutes saved per task, question correctness, proportion supported by traceable evidence, input/output/cached token cost, Snowflake compute cost, agent tool calls, artifact generation success, user satisfaction and examples of decision impact. Avoid employer confidential numbers in public portfolio materials.
 
-**V1 status:** Safe local mode, the disabled-by-default Snowflake and model connectors, bounded investigations, PowerPoint tools, identity/audit contracts, desktop Explore/Present flows and synthetic evaluation are implemented. Enterprise activation, real-company-data validation, native signing and production deployment are intentionally outside the repository and require the approvals above.
+**V1 status:** The repository-controlled v1 design is implemented: safe local mode; disabled-by-default Snowflake and model connectors; bounded investigations; PostgreSQL enterprise persistence; scoped retrieval, preferences, collections and erasure; SVG chart and editable PowerPoint artifacts; complete desktop workspaces; identity/audit contracts; and synthetic plus approved-case evaluation. Enterprise activation, real-company-data validation, corporate branding approval, native signing and production deployment are intentionally outside the repository and require the approvals above.

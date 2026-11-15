@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 import os
+import math
 import re
 import uuid
 import zipfile
 
 
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+SVG_MIME = "image/svg+xml"
 
 
 @dataclass(frozen=True)
@@ -270,4 +272,116 @@ class PresentationBuilder:
             filename=_safe_filename(title),
             size_bytes=path.stat().st_size,
             slide_count=len(slides),
+        )
+
+
+@dataclass(frozen=True)
+class ChartArtifact:
+    artifact_id: str
+    path: Path
+    filename: str
+    size_bytes: int
+    slide_count: int = 0
+    mime_type: str = SVG_MIME
+    kind: str = "chart"
+    extension: str = "svg"
+
+
+def _safe_chart_filename(title: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9._ -]+", "", title).strip().replace(" ", "_")
+    return (clean[:70] or "BOLT_chart") + ".svg"
+
+
+class ChartBuilder:
+    """Create a standalone accessible SVG without executing renderer content."""
+
+    def __init__(self, output_dir: Path):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def build(self, *, chart: dict, evidence: dict, owner_id: str) -> ChartArtifact:
+        title = str(chart.get("title") or "BOLT analysis chart").strip()
+        labels = [str(value) for value in (chart.get("labels") or [])]
+        raw_values = chart.get("values") or []
+        if (
+            not owner_id
+            or not title
+            or len(title) > 200
+            or not labels
+            or len(labels) != len(raw_values)
+            or len(labels) > 100
+        ):
+            raise ValueError("Chart artifact requires bounded labels and values")
+        try:
+            values = [float(value) for value in raw_values]
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Chart values must be numeric") from exc
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("Chart values must be finite")
+        chart_type = chart.get("type")
+        if chart_type not in {"bar", "line"}:
+            raise ValueError("Chart type is not supported")
+        query_id = str(evidence.get("query_id") or "not available")
+        source = str(evidence.get("source") or "not available")
+        unit = str(chart.get("unit") or "")
+        width = 960
+        height = max(360, 150 + 44 * len(labels))
+        maximum = max(max(values), 1.0)
+        elements = [
+            f'<title>{escape(title)}</title>',
+            f'<desc>Source: {escape(source)}. Query ID: {escape(query_id)}. '
+            f'Values are expressed in {escape(unit or "the reported unit")}.</desc>',
+            f'<metadata>Query ID: {escape(query_id)} | Source: {escape(source)}</metadata>',
+            f'<rect width="{width}" height="{height}" fill="#0F172A"/>',
+            f'<text x="48" y="58" fill="#F8FAFC" font-size="28" '
+            f'font-family="Arial, sans-serif" font-weight="700">{escape(title)}</text>',
+            f'<text x="48" y="88" fill="#CBD5E1" font-size="14" '
+            f'font-family="Arial, sans-serif">Source: {escape(source)} · Query {escape(query_id)}</text>',
+        ]
+        if chart_type == "bar":
+            for index, (label, value) in enumerate(zip(labels, values)):
+                y = 125 + index * 44
+                bar_width = max(0.0, value) / maximum * 520
+                elements.extend([
+                    f'<text x="48" y="{y + 21}" fill="#CBD5E1" font-size="14" '
+                    f'font-family="Arial, sans-serif">{escape(label)}</text>',
+                    f'<rect x="250" y="{y}" width="520" height="26" rx="4" fill="#1E293B"/>',
+                    f'<rect x="250" y="{y}" width="{bar_width:.2f}" height="26" rx="4" fill="#3B82F6"/>',
+                    f'<text x="790" y="{y + 20}" fill="#F8FAFC" font-size="14" '
+                    f'font-family="Arial, sans-serif">{escape(f"{value:g} {unit}".strip())}</text>',
+                ])
+        else:
+            plot_top, plot_bottom = 125, height - 72
+            plot_left, plot_right = 70, 890
+            points = []
+            for index, value in enumerate(values):
+                x = plot_left + index * (plot_right - plot_left) / max(1, len(values) - 1)
+                y = plot_bottom - value / maximum * (plot_bottom - plot_top)
+                points.append((x, y))
+            elements.append(
+                '<polyline fill="none" stroke="#60A5FA" stroke-width="4" '
+                'stroke-linejoin="round" stroke-linecap="round" points="'
+                + " ".join(f"{x:.2f},{y:.2f}" for x, y in points) + '"/>'
+            )
+            for index, (x, y) in enumerate(points):
+                elements.extend([
+                    f'<circle cx="{x:.2f}" cy="{y:.2f}" r="5" fill="#F59E0B"/>',
+                    f'<text x="{x:.2f}" y="{plot_bottom + 28}" fill="#CBD5E1" '
+                    f'font-size="12" text-anchor="middle" font-family="Arial, sans-serif">'
+                    f'{escape(labels[index])}</text>',
+                ])
+        svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" role="img" '
+            f'viewBox="0 0 {width} {height}">' + "".join(elements) + "</svg>"
+        )
+        artifact_id = uuid.uuid4().hex
+        path = self.output_dir / f"{artifact_id}.svg"
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(svg, encoding="utf-8")
+        os.replace(temporary, path)
+        return ChartArtifact(
+            artifact_id=artifact_id,
+            path=path,
+            filename=_safe_chart_filename(title),
+            size_bytes=path.stat().st_size,
         )

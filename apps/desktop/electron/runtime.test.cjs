@@ -104,3 +104,30 @@ test('child token is private and only allowlisted routes are proxied', async () 
   backend.stop(); backend.stop();
   assert.equal(terminated,true);
 });
+
+
+test('IPC validates memory, collection, data source, chart, and settings routes', () => {
+  assert.deepEqual(validateRequest('/v1/preferences'), {method:'GET',body:undefined});
+  assert.deepEqual(validateRequest('/v1/collections'), {method:'GET',body:undefined});
+  assert.deepEqual(validateRequest('/v1/artifacts/all'), {method:'GET',body:undefined});
+  assert.deepEqual(validateRequest('/v1/data-sources'), {method:'GET',body:undefined});
+  const postCases = [
+    ['/v1/preferences',{key:'default_metric',value:'revenue'}],
+    ['/v1/memory/search',{query:'revenue',limit:10}],
+    ['/v1/memory/erase',{confirmation:'ERASE MY BOLT MEMORY'}],
+    ['/v1/collections',{name:'Leadership'}],
+    ['/v1/collection-items',{collection_id:id,session_id:id,result_ref:'q1',title:'Revenue'}],
+    ['/v1/charts',{session_id:id,query_id:'q1'}],
+  ];
+  for (const [route,payload] of postCases) {
+    const result=validateRequest(route,{method:'POST',body:JSON.stringify(payload)});
+    assert.equal(result.method,'POST');
+    assert.deepEqual(JSON.parse(result.body),payload);
+  }
+  assert.throws(()=>validateRequest('/v1/memory/erase',{
+    method:'POST',body:JSON.stringify({confirmation:'erase'})
+  }),/Invalid/);
+  assert.throws(()=>validateRequest('/v1/preferences',{
+    method:'POST',body:JSON.stringify({key:'x',value:'y',admin:true})
+  }),/Invalid/);
+});

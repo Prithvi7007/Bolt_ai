@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 from .planner import QueryPlan
 
 
-_ALLOWED_CONTEXT = ("metric", "dimension", "period", "result_ref")
+_ALLOWED_CONTEXT = ("metric", "dimension", "period", "result_ref", "memory_snippets")
 
 
 def bounded_context(memory: dict) -> dict:

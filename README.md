@@ -52,7 +52,7 @@ For a native installer, install `services/api/requirements-build.txt` in Python,
 
 ## BOLT v1 implementation status
 
-The repository-side BOLT v1 design is implemented on the full-v1 feature branch. Safe local mode remains the default. Enterprise activation still requires organization-owned SSO/proxy configuration, approved Snowflake objects and credentials, an approved model endpoint, retention/export policy, signing certificates and a deployment owner. Those inputs are not stored in this repository.
+The repository implements the BOLT v1 reference architecture with safe local and disabled-by-default enterprise paths. Safe local mode remains the default. Enterprise activation still requires organization-owned SSO/proxy configuration, approved Snowflake objects and credentials, an approved model endpoint, retention/export policy, signing certificates and a deployment owner. Those inputs are not stored in this repository.
 
 The earlier [synthetic prototype closure](docs/impact/prototype-closure-2026-11-15.md) is retained as a milestone record, not as the end of BOLT development.
 
@@ -62,15 +62,15 @@ The earlier [synthetic prototype closure](docs/impact/prototype-closure-2026-11-
 - **Server-created SQL only:** fixed `SELECT` templates, allowlisted dimensions, parameterized dates, read-only SQLite, 100-row result limit. Unsupported or mutation-like instructions do not execute SQL.
 - **Local Data Lab (v0.8/v0.9):** Open a UTF-8 CSV in the packaged desktop renderer, profile its schema and quality, approve a numeric target, and explicitly run a second streaming pass for target mean, standard deviation, range, sum, up to 12 numeric pairwise correlations, optional categorical breakdowns, and observed date-series aggregation. No source rows or dataset bytes are sent to the synthetic FastAPI backend or any external service. Correlations are descriptive, not causal; there is no LLM or forecasting model. Group/date cardinality and predictor checks are bounded and disclosed in the UI.
 - **Ask Your Data (v1.0):** After approving a numeric target, ask supported natural-language questions directly against the imported local CSV. The deterministic router calculates real sums, averages, counts, range, correlations, grouped rankings, observed date-series aggregates, and missingness summaries with explicit formulas and row-count provenance. It rejects forecasting, causal inference, date/category filters, unsupported questions and unapproved alternate metrics rather than fabricating answers. Only bounded aggregates and recent Q&A remain in renderer memory; this does not use an LLM or upload dataset bytes.
-- **Persistent conversation history:** SQLite stores full transcript for display, distinct from a compact working-memory snapshot used to resolve follow-ups.
+- **Scoped persistence and memory:** safe local mode uses SQLite; enterprise mode requires PostgreSQL for identity-scoped conversations, bounded working state, preferences, collections, audit events and artifact indexes. Memory can be searched or erased through explicit controls.
 - **Evidence inspector:** exact executed SQL, parameters, synthetic query ID, returned table, and provenance.
 - **Approved-model gateway:** optional OpenAI-compatible HTTPS gateway receives only a bounded working context and semantic catalog, returns structured query plans rather than SQL, and records prompt, completion and cached-token usage when the provider reports it.
 - **Governed enterprise query path:** the disabled-by-default Snowflake adapter uses server-side credentials, a read-only role, generated parameterized SELECT statements, an approved object/column policy, bounded rows/time, query tags and query-ID/source/role/freshness evidence.
 - **Bounded investigations:** “why” questions compare approved channel and region dimensions with at most four queries and explicitly label associations as non-causal.
-- **Editable presentations:** the Present workspace creates 3–5 slide PPTX artifacts from stored analyses, including query IDs, sources, assumptions and limitations; the renderer can save them only through a restricted main-process IPC action.
+- **Editable presentations and chart exports:** Present creates 3–5 slide PPTX artifacts; verified charts export as accessible SVG files. Both include query/source evidence and save only through restricted main-process IPC.
 - **Enterprise identity boundary:** remote enterprise mode refuses to start without an approved identity resolver and rejects missing proxy authentication or unauthorized role mappings.
-- **Measured evaluation:** a reproducible 20-question synthetic benchmark reports accuracy with a Wilson interval, provenance coverage, adversarial write rejection, bounded-context reduction and maximum tool calls.
-- **Visualizations:** chart types from server responses, shown as accessible SVG/CSS graphics with data table fallback.
+- **Measured evaluation:** the synthetic gate reports correctness, provenance, safety and bounded context. The approved-case runner adds latency, token/cache use, query usage and orchestration metrics without emitting question content.
+- **Complete analyst workspace:** Analyst, Data Lab, Explore, Present, Collections, Data Sources, Artifacts and Settings/memory controls share one desktop shell.
 - **Electron hardening:** `contextIsolation`, renderer sandboxing, disabled Node integration, blocked arbitrary navigation/windows.
 
 ## Test commands
@@ -93,6 +93,12 @@ python scripts/smoke_test.py
 | `GET /v1/sessions/{id}/turns` | retrieves the persisted conversation ledger |
 | `POST /v1/chat` | executes a bounded evidence-backed question or investigation |
 | `POST /v1/presentations` | creates an editable PPTX from stored analyses |
+| `POST /v1/charts` | creates an evidence-stamped SVG from a stored analysis |
+| `GET/POST /v1/preferences` | reads or updates identity-scoped preferences |
+| `POST /v1/memory/search` | searches scoped preferences, analyses, collections and artifacts |
+| `POST /v1/memory/erase` | erases scoped memory after exact confirmation |
+| `GET/POST /v1/collections` | lists or creates analysis-reference collections |
+| `GET /v1/data-sources` | reports governed connector state without credentials |
 | `GET /v1/artifacts` | lists session-scoped artifacts |
 | `GET /v1/artifacts/{id}` | returns a session-scoped artifact to trusted desktop IPC |
 
@@ -100,7 +106,7 @@ python scripts/smoke_test.py
 
 ```text
 Electron main (sandboxed window; private loopback bearer token)
-  ├─ React workspace: Analyst | Data Lab | Explore | Present
+  ├─ React workspace: Analyst | Data Lab | Explore | Present | Collections | Sources | Artifacts | Settings
   ├─ restricted request and artifact-save IPC
   └─ safe local FastAPI sidecar on random 127.0.0.1 port
        ├─ synthetic read-only SQLite adapter
@@ -112,7 +118,8 @@ Organization-hosted FastAPI (separate approved runtime)
   ├─ trusted SSO/identity-proxy boundary + role mapping
   ├─ semantic catalog and structured model plans
   ├─ fail-closed Snowflake read-only adapter
-  ├─ query tags, audit events and scoped artifact indexes
+  ├─ PostgreSQL ledger, preferences, collections, audit and artifact indexes
+  ├─ query tags and scoped SVG/PPTX artifacts
   └─ optional approved HTTPS model gateway
 ```
 
@@ -125,6 +132,7 @@ The connectors and security boundaries are implemented but are not proof of empl
 - Spec: `docs/superpowers/specs/2026-11-13-bolt-ai-v1-design.md`
 - Slice A plan: `docs/superpowers/plans/2026-11-13-bolt-slice-a.md`
 - Full v1 completion plan: `docs/superpowers/plans/2026-11-15-bolt-v1-complete.md`
+- Full-design gap closure: `docs/superpowers/plans/2026-11-15-bolt-v1-full-design-gaps.md`
 - Enterprise activation: `docs/enterprise-activation.md`
 - V1 evaluation: `docs/impact/v1-evaluation.md`
 - Impact/measurement plan: `docs/impact/prototype-metrics.md`
