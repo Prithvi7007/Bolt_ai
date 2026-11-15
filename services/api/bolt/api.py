@@ -1,6 +1,9 @@
 """Synthetic-only demo API; production identity, access control and Snowflake are not implemented."""
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+import hmac
+import os
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel,Field
 from .memory import SessionStore
@@ -15,13 +18,26 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1,max_length=2000)
 
 
-def create_app(db_path: Path | None=None, fixture_path:Path | None=None) -> FastAPI:
+def create_app(db_path: Path | None=None, fixture_path:Path | None=None, *, access_token: str | None=None) -> FastAPI:
     db_path=Path(db_path) if db_path else BASE / '.local' / 'bolt_sessions.sqlite3'
     fixture_path=Path(fixture_path) if fixture_path else BASE / 'fixtures' / 'synthetic' / 'revenue.csv'
+    if access_token is not None and len(access_token) < 32:
+        raise ValueError("Desktop API requires a strong random access token")
     store=SessionStore(db_path)
     app=FastAPI(title='BOLT AI — Synthetic Prototype',version='0.1.0')
-    app.add_middleware(CORSMiddleware,allow_origins=['http://localhost:5173','http://127.0.0.1:5173','null'],
-                       allow_methods=['GET','POST'],allow_headers=['Content-Type'])
+    if access_token is None:
+        # Keep the existing browser-preview workflow working in explicit dev mode.
+        app.add_middleware(CORSMiddleware,allow_origins=['http://localhost:5173','http://127.0.0.1:5173','null'],
+                           allow_methods=['GET','POST'],allow_headers=['Content-Type'])
+    else:
+        # Auth applies even to /health and API docs; no CORS for the managed sidecar.
+        @app.middleware('http')
+        async def require_desktop_token(request: Request, call_next):
+            provided = request.headers.get('authorization', '')
+            expected = 'Bearer ' + access_token
+            if not hmac.compare_digest(provided, expected):
+                return JSONResponse(status_code=401, content={'detail':'Unauthorized desktop request'})
+            return await call_next(request)
 
     @app.get('/health')
     def health():
@@ -57,4 +73,6 @@ def create_app(db_path: Path | None=None, fixture_path:Path | None=None) -> Fast
 
     return app
 
-app=create_app()
+# The packaged desktop child supplies its own authenticated, explicit app.
+# Avoid creating an unintended SQLite file in PyInstaller's extraction directory.
+app=create_app() if os.environ.get('BOLT_DESKTOP_CHILD') != '1' else None
