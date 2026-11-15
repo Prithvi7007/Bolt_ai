@@ -185,6 +185,9 @@ async function main() {
       'typeof window.boltApi?.request === "function" && typeof window.require === "undefined"'
     ), true, 'Packaged renderer must use the restricted authenticated IPC bridge');
 
+    await eventually(async () => await first.eval(
+      'Boolean(document.querySelector(".session-button.selected"))'
+    ), 'initial synthetic conversation is ready');
     const clicked = await first.eval(
       '(() => { const b = [...document.querySelectorAll("button.example")].find(x => x.textContent.includes("2026 revenue by channel")); if (!b) return false; b.click(); return true; })()'
     );
@@ -196,10 +199,13 @@ async function main() {
       '/^\\s*SELECT\\b/i.test(document.querySelector("pre.sql code")?.textContent || "")'
     ), true, 'Evidence inspector must show executed SELECT SQL');
 
-    const dataRows = await first.eval(
-      '(() => { const b = [...document.querySelectorAll(".inspector-tabs button")].find(x => x.textContent.trim() === "Data"); if (!b) return -1; b.click(); return document.querySelectorAll(".data-table-wrapper tbody tr").length; })()'
+    const dataClicked = await first.eval(
+      '(() => { const b = [...document.querySelectorAll(".inspector-tabs button")].find(x => x.textContent.trim() === "Data"); if (!b) return false; b.click(); return true; })()'
     );
-    assert.ok(dataRows >= 4, 'Data inspector must display 4 synthetic channel rows');
+    assert.equal(dataClicked, true, 'Data inspector tab must be clickable');
+    await eventually(async () => await first.eval(
+      'document.querySelectorAll(".data-table-wrapper tbody tr").length >= 4'
+    ), 'Data inspector must display 4 synthetic channel rows');
     const session = await first.eval(
       'document.querySelector(".session-button.selected")?.textContent?.trim()'
     );
