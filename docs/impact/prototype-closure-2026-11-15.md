@@ -1,5 +1,7 @@
 # BOLT Synthetic Prototype Closure
 
+> Historical milestone: this closed the synthetic foundation only. Full BOLT v1 development resumed afterward; this document is not the product-completion record.
+
 **Closed:** November 15, 2026  
 **Repository:** https://github.com/Prithvi7007/Bolt_ai  
 **Verified main:** `246eb81ca23a2511f7acb2463eb2aae1d9d8631d`  

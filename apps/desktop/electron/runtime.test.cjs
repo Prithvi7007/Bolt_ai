@@ -22,6 +22,26 @@ test('IPC permits only known routes and methods', () => {
   assert.throws(()=>validateRequest('/health',{body:'evil'}));
 });
 
+test('IPC validates governed catalog, presentation, and scoped artifact routes', () => {
+  assert.deepEqual(validateRequest('/v1/catalog'), {method:'GET',body:undefined});
+  const presentation=validateRequest('/v1/presentations',{
+    method:'POST',
+    body:JSON.stringify({session_id:id,title:'Leadership brief'})
+  });
+  assert.equal(presentation.method,'POST');
+  assert.deepEqual(JSON.parse(presentation.body),{session_id:id,title:'Leadership brief'});
+  assert.deepEqual(validateRequest(`/v1/artifacts?session_id=${id}`),{method:'GET',body:undefined});
+  assert.deepEqual(
+    validateRequest(`/v1/artifacts/${'a'.repeat(32)}?session_id=${id}`),
+    {method:'GET',body:undefined}
+  );
+  assert.throws(()=>validateRequest('/v1/presentations',{method:'POST',body:'{}'}),/Invalid/);
+  assert.throws(()=>validateRequest(`/v1/artifacts?session_id=${id}&admin=1`),/Unsupported/);
+  assert.throws(()=>validateRequest(
+    `/v1/artifacts/${'a'.repeat(32)}?session_id=${'x'.repeat(32)}`
+  ),/Unsupported/);
+});
+
 test('packaged backend resolves by operating system without shell', () => {
   const win=backendCommand({isPackaged:true,resourcesPath:'C:/resources',appPath:'ignored',userData:'C:/userdata',platform:'win32'});
   assert.equal(path.basename(win.command),'bolt-service.exe');

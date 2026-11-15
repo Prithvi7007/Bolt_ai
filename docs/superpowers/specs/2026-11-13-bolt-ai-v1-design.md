@@ -1,10 +1,16 @@
 # BOLT AI — v1 Product & Engineering Design
 
-**Status:** Approved for synthetic prototyping on 2026-11-13; production approval pending  
+**Status:** Repository implementation complete on 2026-11-15; enterprise activation and production approval pending  
 **Date:** 2026-11-13  
 **Working name:** BOLT AI  
 **Working description:** AI-native decision-intelligence desktop workbench  
 **Tagline:** Ask. Investigate. Prove. Present.
+
+## Implementation record
+
+The safe local desktop and the repository-side enterprise contracts are implemented. This includes governed query validation, a disabled-by-default Snowflake adapter, bounded structured model planning, descriptive investigations, scoped identity/audit/memory records, editable PPTX artifacts, Explore/Present desktop modes and a reproducible evaluation gate.
+
+Implementation does not grant authorization to use employer data. Live activation still requires the open organizational decisions in Section 11: approved SSO/identity proxy, Snowflake objects and credentials, model gateway, retention/export rules, presentation branding, security review, signing and deployment ownership.
 
 ## 1. Intent
 
@@ -218,10 +224,10 @@ Protected default branch; short-lived feature branches, reviewable PRs, CI check
 2. **Company identity & access:** SSO mechanism, Snowflake role mapping, authorized warehouse/semantic views, permitted data retention, export policy.
 3. **SQL intelligence:** Snowflake Cortex Analyst vs self-hosted tool calling must be evaluated on identical approved datasets.
 4. **Presentation branding:** corporate design templates must be authorized before integrating them; begin with neutral themes.
-5. **Approval to implement:** approved for synthetic prototype Slice A only. Real data, enterprise identity, model routing and deployment require separate approvals.
+5. **Approval to activate:** the repository reference implementation is complete. Real data, enterprise identity, model routing and deployment remain disabled until separate organizational approvals are supplied.
 
 ## 12. Promotion impact instrumentation
 
 Capture before/after in `docs/impact`: average analyst minutes saved per task, question correctness, proportion supported by traceable evidence, input/output/cached token cost, Snowflake compute cost, agent tool calls, artifact generation success, user satisfaction and examples of decision impact. Avoid employer confidential numbers in public portfolio materials.
 
-**Prototype status:** The Slice A test-first plan and implementation are in this source bundle. Real Snowflake connectivity, model calls, PowerPoint tools, desktop package builds and production deployment are not included in v0.1.
+**V1 status:** Safe local mode, the disabled-by-default Snowflake and model connectors, bounded investigations, PowerPoint tools, identity/audit contracts, desktop Explore/Present flows and synthetic evaluation are implemented. Enterprise activation, real-company-data validation, native signing and production deployment are intentionally outside the repository and require the approvals above.
