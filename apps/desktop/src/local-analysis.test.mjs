@@ -48,6 +48,18 @@ test('excludes missing target, mismatched records and missing paired predictors'
   assert.equal(result.timeline.length, 4);
 });
 
+test('date coverage counts only rows with both numeric target and a valid date', () => {
+  const dated = Array.from({length:19},(_,i)=>'2026-01-'+String(i+1).padStart(2,'0')+',1');
+  const csv = ['date,metric',...dated,',1','invalid,1',','].join('\n');
+  const result = analyzeCsvText(csv,{target:'metric',dateColumn:'date'});
+  assert.equal(result.scannedRows,22);
+  assert.equal(result.validRows,21);
+  assert.equal(result.datedTargetRows,19);
+  assert.equal(result.excludedDateRows,2);
+  assert.equal(result.timelineRows,19);
+  assert.ok(result.warnings.some(w=>/2.*missing or invalid date/.test(w)));
+});
+
 test('rejects unknown, nonnumeric and conflicting target selections', () => {
   assert.throws(() => analyzeCsvText(sample,{target:'not_here'}), /not present/);
   assert.throws(() => analyzeCsvText(sample,{target:'region'}), /consistently numeric/);
@@ -131,4 +143,11 @@ test('exposes clearly bounded date aggregation above 512 distinct periods',()=>{
   assert.equal(r.timeline.length,512);
   assert.equal(r.dateLimited,true);
   assert.ok(r.warnings.some(x=>x.includes('not complete')));
+  assert.equal(r.datedTargetRows,515);
+  assert.equal(r.timelineRows,512);
+  assert.equal(r.excludedDateRows,0);
+  const repeated = analyzeCsvText(lines.join('\n')+'\n2025-01-01,1', {target:'metric',dateColumn:'date'});
+  assert.equal(repeated.datedTargetRows,516);
+  assert.equal(repeated.timelineRows,513);
+  assert.equal(repeated.timeline[0].rows,2);
 });

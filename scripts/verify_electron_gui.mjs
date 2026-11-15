@@ -242,6 +242,9 @@ async function main() {
     assert.equal(await first.eval(
       'document.querySelector(".lab-series-dates")?.textContent?.includes("2026-01")'
     ), true, 'Local analysis renders observed monthly date series');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-timeline-coverage")?.textContent?.includes("3 of 3 valid target rows") && document.querySelector(".lab-timeline-coverage")?.textContent?.includes("0 missing or invalid date rows")'
+    ), true, 'Local timeline must disclose actual date coverage');
     const localQuestionSent = await first.eval(
       '(() => { const b = [...document.querySelectorAll(".lab-ask-examples button")].find(x => x.textContent.includes("total attendance")); if (!b) return false; b.click(); return true; })()'
     );

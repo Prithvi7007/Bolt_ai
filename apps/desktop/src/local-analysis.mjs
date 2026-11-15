@@ -58,6 +58,7 @@ function collector(options) {
   let predictorLimited = false;
   let valid = 0, mean = 0, m2 = 0, sum = 0, min = null, max = null;
   let dateLimited = false, groupsLimited = false;
+  let datedTargetRows = 0, timelineRows = 0;
   const dates = new Map(), groups = new Map();
   const OVERFLOW = Symbol('overflow');
 
@@ -107,6 +108,7 @@ function collector(options) {
     if (dateIndex >= 0) {
       const key = dateKey(values[dateIndex]);
       if (key !== null) {
+        datedTargetRows++;
         if (!dates.has(key) && dates.size >= DATE_LIMIT) {
           dateLimited = true;
         } else {
@@ -114,6 +116,7 @@ function collector(options) {
           entry.n++;
           entry.sum += y;
           dates.set(key, entry);
+          timelineRows++;
         }
       }
     }
@@ -153,7 +156,10 @@ function collector(options) {
     if (profile.rowCount - valid) warnings.push((profile.rowCount - valid) + ' valid CSV rows had missing or nonnumeric target values');
     if (valid < 3) warnings.push('Very few valid target values; interpret patterns cautiously');
     if (valid && min === max) warnings.push('Target has no variation; correlations are undefined');
-    if (dateLimited) warnings.push('Date series is limited to the first 512 distinct dates encountered; it is not complete');
+    const excludedDateRows = dateColumn ? valid - datedTargetRows : 0;
+    if (excludedDateRows) warnings.push(excludedDateRows + ' numeric target rows had a missing or invalid date and were excluded from the date series');
+    if (dateLimited) warnings.push('Date series is limited to the first 512 distinct dates encountered; '
+      + (datedTargetRows - timelineRows) + ' valid date rows were omitted; it is not complete');
     if (groupsLimited) warnings.push('Only the first 16 distinct groups are shown individually; remaining groups are aggregated');
     if (predictorLimited) warnings.push('Correlation checks are limited to the first 256 non-target, non-date, non-group columns');
     if (profile.timeGrain === 'irregular' && dateColumn) warnings.push('Date intervals are irregular; no missing periods were filled');
@@ -165,7 +171,8 @@ function collector(options) {
       standardDeviation: valid > 1 ? Math.sqrt(m2 / (valid - 1)) : null,
       min, max, correlations: predictor ? corrs.filter(row => row.column === predictor) : corrs.slice(0, 12),
       checkedPredictorColumns: retainedPredictorCount,
-      groups: groupRows, timeline, dateLimited, groupsLimited, warnings,
+      groups: groupRows, timeline, datedTargetRows, excludedDateRows, timelineRows,
+      dateLimited, groupsLimited, warnings,
       processing: 'On-device descriptive statistics over valid CSV records; bounded memory; no network requests',
     };
   }
