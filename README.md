@@ -2,7 +2,7 @@
 
 **Ask. Investigate. Prove. Present.**
 
-BOLT is an Electron + React desktop intelligence workbench backed by a Python FastAPI analytics service. It combines a **synthetic chat demo** with a **local-only CSV descriptive-analysis lab**. It is not a live Snowflake or LLM integration. The first slice demonstrates evidence-grounded answers, persisted session history, small structured context state, charts and SQL inspection.
+BOLT is an Electron + React desktop intelligence workbench backed by a Python FastAPI analytics service. It combines a **synthetic chat demo** with a **local-only CSV analysis and guided question-answering lab**. It is not a live Snowflake or LLM integration. The first slice demonstrates evidence-grounded answers, persisted session history, small structured context state, charts and SQL inspection.
 
 > **No real company data, API keys, Snowflake connection, or LLM model is included.** All screenshots, numbers, charts and examples use a generated synthetic revenue fixture.
 
@@ -55,6 +55,7 @@ For a native installer, install `services/api/requirements-build.txt` in Python,
 - **Synthetic governed metrics:** 192 generated rows, 2 regions, 4 channels and 24 months. Supported queries: revenue by month/channel/region with 2025, 2026 or recent-12-month scope.
 - **Server-created SQL only:** fixed `SELECT` templates, allowlisted dimensions, parameterized dates, read-only SQLite, 100-row result limit. Unsupported or mutation-like instructions do not execute SQL.
 - **Local Data Lab (v0.8/v0.9):** Open a UTF-8 CSV in the packaged desktop renderer, profile its schema and quality, approve a numeric target, and explicitly run a second streaming pass for target mean, standard deviation, range, sum, up to 12 numeric pairwise correlations, optional categorical breakdowns, and observed date-series aggregation. No source rows or dataset bytes are sent to the synthetic FastAPI backend or any external service. Correlations are descriptive, not causal; there is no LLM or forecasting model. Group/date cardinality and predictor checks are bounded and disclosed in the UI.
+- **Ask Your Data (v1.0):** After approving a numeric target, ask supported natural-language questions directly against the imported local CSV. The deterministic router calculates real sums, averages, counts, range, correlations, grouped rankings, observed date-series aggregates, and missingness summaries with explicit formulas and row-count provenance. It rejects forecasting, causal inference, date/category filters, unsupported questions and unapproved alternate metrics rather than fabricating answers. Only bounded aggregates and recent Q&A remain in renderer memory; this does not use an LLM or upload dataset bytes.
 - **Persistent conversation history:** SQLite stores full transcript for display, distinct from a compact working-memory snapshot used to resolve follow-ups.
 - **Evidence inspector:** exact executed SQL, parameters, synthetic query ID, returned table, and provenance.
 - **Token honesty:** no LLM is used in this slice; measured LLM tokens and calls are 0. True token benchmarking starts when a model is integrated.

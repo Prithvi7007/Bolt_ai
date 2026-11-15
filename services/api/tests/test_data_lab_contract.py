@@ -39,3 +39,22 @@ def test_local_analysis_regressions_and_network_boundary():
         assert network_call not in analysis_ui
     assert "analyzeCsvFile(file" in analysis_ui
     assert "No remote request" in analysis_ui
+
+def test_ask_your_data_local_query_contract():
+    """Questions and CSV analysis must stay inside the sandboxed renderer."""
+    suite = ROOT / "apps" / "desktop" / "src" / "ask-data.test.mjs"
+    result = subprocess.run(
+        ["node", "--test", str(suite)],
+        capture_output=True, text=True, timeout=35,
+    )
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
+    engine = (ROOT / "apps" / "desktop" / "src" / "ask-data.mjs").read_text()
+    gui = (ROOT / "apps" / "desktop" / "src" / "AskYourData.tsx").read_text()
+    lab = (ROOT / "apps" / "desktop" / "src" / "DatasetLab.tsx").read_text()
+    for network_call in ("fetch(", "XMLHttpRequest", "sendBeacon(", "boltApi.request("):
+        assert network_call not in engine
+        assert network_call not in gui
+    assert "answerDataQuestion(file" in gui
+    assert "approvedTarget && sourceFile && <AskYourData" in lab
+    assert "No filters, forecasts or causal claims" in gui
+    assert "No model" in engine
