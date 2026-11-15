@@ -13,6 +13,10 @@ type Reply = {status:'ok'|'unsupported'|'no_data';answer:string;evidence:Evidenc
   data:Data|null;chart:Chart|null;cost:{prompt_tokens:number;completion_tokens:number;context_characters:number};limitations:string[]};
 type Turn = {role:'user'|'assistant';body:string;payload:Reply|null;created_at:string};
 type Session = {session_id:string;created_at:string};
+type Health = {mode:'synthetic'|'enterprise';version:string;snowflake_connected:boolean;llm_connected:boolean;
+  capabilities:Record<string,boolean>};
+type Metric = {metric_id:string;name:string;description:string;unit:string;dimensions:string[]};
+type Artifact = {artifact_id:string;filename:string;size_bytes:number;slide_count:number;created_at?:string};
 const API=import.meta.env.VITE_BOLT_API_URL || 'http://127.0.0.1:8787';
 const EXAMPLES=['Show monthly revenue trend over the last 12 months',
                 'Break down 2026 revenue by channel',
@@ -61,7 +65,7 @@ function ResultChart({chart}:{chart:Chart}){
 }
 
 export default function App(){
-  const [workspace,setWorkspace]=useState<'analyst'|'data'>('analyst');
+  const [workspace,setWorkspace]=useState<'analyst'|'data'|'explore'|'present'>('analyst');
   const [sessions,setSessions]=useState<Session[]>([]);
   const [sid,setSid]=useState<string>('');
   const [turns,setTurns]=useState<Turn[]>([]);
@@ -69,6 +73,11 @@ export default function App(){
   const [busy,setBusy]=useState(false);
   const [healthy,setHealthy]=useState<'checking'|'online'|'offline'>('checking');
   const [error,setError]=useState<string>('');
+  const [healthInfo,setHealthInfo]=useState<Health|null>(null);
+  const [catalog,setCatalog]=useState<Metric[]>([]);
+  const [artifacts,setArtifacts]=useState<Artifact[]>([]);
+  const [presentationTitle,setPresentationTitle]=useState('Leadership analysis brief');
+  const [artifactBusy,setArtifactBusy]=useState(false);
   const [tab,setTab]=useState<'sql'|'data'|'details'>('sql');
   const [showInspector,setShowInspector]=useState(true);
   const [selectedReply,setSelectedReply]=useState<Reply|null>(null);
@@ -89,10 +98,13 @@ export default function App(){
     let live=true;
     (async()=>{
       try{
-        const status=await request<{mode:string}>('/health');
+        const status=await request<Health>('/health');
         if(!live)return;
-        if(status.mode!=='synthetic') throw new Error('Unexpected API mode');
-        setHealthy('online');
+        if(!['synthetic','enterprise'].includes(status.mode)) throw new Error('Unexpected API mode');
+        setHealthInfo(status);setHealthy('online');
+        const catalogResult=await request<{metrics:Metric[]}>('/v1/catalog');
+        if(!live)return;
+        setCatalog(catalogResult.metrics);
         const result=await request<{sessions:Session[]}>('/v1/sessions');
         if(!live)return;
         setSessions(result.sessions);
@@ -113,6 +125,29 @@ export default function App(){
     }catch(e){setError('Unable to complete that query. The server may be unavailable.');setHealthy('offline');}
     finally{setBusy(false);}
   }
+  async function refreshArtifacts(sessionId=sid){
+    if(!sessionId)return;
+    const result=await request<{artifacts:Artifact[]}>(`/v1/artifacts?session_id=${sessionId}`);
+    setArtifacts(result.artifacts);
+  }
+  async function createPresentation(){
+    if(!sid||artifactBusy||!presentationTitle.trim())return;
+    setArtifactBusy(true);setError('');
+    try{
+      const artifact=await request<Artifact>('/v1/presentations',{
+        method:'POST',body:JSON.stringify({session_id:sid,title:presentationTitle.trim()})
+      });
+      await refreshArtifacts(sid);
+      if(window.boltApi){
+        await window.boltApi.saveArtifact(artifact.artifact_id,sid,artifact.filename);
+      }
+    }catch(e){setError('Unable to create the presentation. Run an evidence-backed analysis first.');}
+    finally{setArtifactBusy(false);}
+  }
+  async function saveArtifact(artifact:Artifact){
+    if(!window.boltApi){setError('Artifact saving is available in the desktop application.');return;}
+    await window.boltApi.saveArtifact(artifact.artifact_id,sid,artifact.filename);
+  }
   function submitForm(event:FormEvent){event.preventDefault();void submit(question);}
   function onComposerKey(event:KeyboardEvent<HTMLTextAreaElement>){
     if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();void submit(question);}
@@ -124,19 +159,19 @@ export default function App(){
       <div className="sidebar-section-title">WORKSPACE</div>
       <button type="button" className={'workspace-button '+(workspace==='analyst'?'nav-active':'nav-text')} onClick={()=>setWorkspace('analyst')}><MessageSquareText size={17}/> Analyst <span className="nav-tag">01</span></button>
       <button type="button" className={'workspace-button '+(workspace==='data'?'nav-active':'nav-text')} onClick={()=>setWorkspace('data')}><Database size={17}/> Data Lab <span className="nav-tag">02</span></button>
-      <div className="nav-text"><BarChart3 size={17}/> Insights <span className="muted-small">Next slice</span></div>
-      <div className="nav-text"><Layers size={17}/> Presentations <span className="muted-small">Next slice</span></div>
+      <button type="button" className={'workspace-button '+(workspace==='explore'?'nav-active':'nav-text')} onClick={()=>setWorkspace('explore')}><BarChart3 size={17}/> Explore <span className="nav-tag">03</span></button>
+      <button type="button" className={'workspace-button '+(workspace==='present'?'nav-active':'nav-text')} onClick={()=>{setWorkspace('present');void refreshArtifacts()}}><Layers size={17}/> Present <span className="nav-tag">04</span></button>
       <div className="sidebar-section-title past-title">RECENT SESSIONS</div>
       <nav className="sessions" aria-label="Past conversations">
         {sessions.map(s=><button key={s.session_id} onClick={()=>void openSession(s.session_id)} className={`session-button ${sid===s.session_id?'selected':''}`}>
           <Clock3 size={14}/> <span>Conversation {s.session_id.slice(0,6)}</span>
         </button>)}
       </nav>
-      <div className="sidebar-footer"><span className="status-light"/> {workspace==='data'?'Local CSV profile':'Synthetic sandbox'} <span className="version">Prototype</span></div>
+      <div className="sidebar-footer"><span className="status-light"/> {workspace==='data'?'Local CSV profile':healthInfo?.snowflake_connected?'Governed enterprise':'Safe synthetic mode'} <span className="version">v1</span></div>
     </aside>
     <div className="main-column">
-      <header className="topbar"><div className="crumb"><span>Workspace</span><span className="crumb-sep">/</span><strong>{workspace==='data'?'Data Lab':'AI Analyst'}</strong><ChevronDown size={13}/></div>
-        <div className="top-actions"><span className="chip"><Database size={14}/> {workspace==='data'?'Local CSV':'Demo dataset'}</span><span className="chip"><Activity size={14}/> 0 LLM tokens</span>{workspace==='analyst'&&<button className="icon-button" aria-label={showInspector?'Hide inspector':'Show inspector'} onClick={()=>setShowInspector(!showInspector)}>{showInspector?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>}</div>
+      <header className="topbar"><div className="crumb"><span>Workspace</span><span className="crumb-sep">/</span><strong>{workspace==='data'?'Data Lab':workspace==='explore'?'Explore':workspace==='present'?'Present':'AI Analyst'}</strong><ChevronDown size={13}/></div>
+        <div className="top-actions"><span className="chip"><Database size={14}/> {workspace==='data'?'Local CSV':healthInfo?.snowflake_connected?'Governed Snowflake':'Synthetic fixture'}</span><span className="chip"><Activity size={14}/> {healthInfo?.llm_connected?'Approved model':'Deterministic mode'}</span>{workspace==='analyst'&&<button className="icon-button" aria-label={showInspector?'Hide inspector':'Show inspector'} onClick={()=>setShowInspector(!showInspector)}>{showInspector?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>}</div>
       </header>
       <main className="conversation" aria-label="BOLT analyst conversation" style={{display:workspace==='analyst'?undefined:'none'}}>
         {turns.length===0&&<section className="welcome"><div className="welcome-symbol"><Zap size={30} fill="currentColor"/></div>
@@ -159,9 +194,29 @@ export default function App(){
       <div className="composer-area" style={{display:workspace==='analyst'?undefined:'none'}}><form className="composer" onSubmit={submitForm}><textarea value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={onComposerKey}
         aria-label="Ask BOLT a question" placeholder="Ask a follow-up question..." rows={2} disabled={busy||healthy!=='online'}/>
         <div className="composer-bottom"><span><Sparkles size={14}/> Read-only demo analytics · Ctrl+Enter to send</span><button type="submit" className="send-button" disabled={busy||!question.trim()||healthy!=='online'} aria-label="Send question"><ArrowUp size={19}/></button></div></form>
-        <div className="composer-disclaimer">BOLT prototype · Synthetic data only · No Snowflake or LLM connection</div>
+        <div className="composer-disclaimer">BOLT v1 · Evidence-backed read-only analysis · External connections fail closed</div>
       </div>
       <div style={{display:workspace==='data'?'contents':'none'}}><DatasetLab/></div>
+      <section className="feature-workspace" style={{display:workspace==='explore'?'block':'none'}} aria-label="Governed semantic catalog">
+        <span className="eyebrow">EXPLORE GOVERNED DATA</span>
+        <h1>Semantic catalog</h1>
+        <p>Only approved metrics and compatible dimensions can reach the read-only query adapter.</p>
+        <div className="feature-grid">{catalog.map(metric=><article className="feature-card" key={metric.metric_id}>
+          <strong>{metric.name}</strong><span>{metric.metric_id} · {metric.unit}</span><p>{metric.description}</p>
+          <div>{metric.dimensions.map(d=><span className="dimension-chip" key={d}>{d}</span>)}</div>
+        </article>)}</div>
+        <article className="governance-card"><strong>Execution guardrails</strong><p>Single approved SELECT · parameterized dates · bounded rows and timeout · query tag, role, freshness and source evidence · no write capability.</p></article>
+      </section>
+      <section className="feature-workspace" style={{display:workspace==='present'?'block':'none'}} aria-label="Presentation artifacts">
+        <span className="eyebrow">PRESENT</span><h1>Leadership artifacts</h1>
+        <p>Create an editable 3–5 slide PowerPoint from the latest evidence-backed analyses in this conversation.</p>
+        <div className="presentation-builder"><textarea aria-label="Presentation title" value={presentationTitle} onChange={e=>setPresentationTitle(e.target.value)} rows={2}/>
+          <button className="new-chat" disabled={artifactBusy||!sid} onClick={()=>void createPresentation()}>{artifactBusy?'Creating…':'Create editable PPTX'}</button></div>
+        <div className="artifact-list">{artifacts.length===0?<p>No presentation artifacts for this conversation yet.</p>:artifacts.map(item=><article className="artifact-row" key={item.artifact_id}>
+          <div><strong>{item.filename}</strong><span>{item.slide_count} slides · {Math.ceil(item.size_bytes/1024)} KB</span></div>
+          <button onClick={()=>void saveArtifact(item)}>Save PPTX</button>
+        </article>)}</div>
+      </section>
     </div>
     {showInspector&&workspace==='analyst'&&<aside className="inspector" aria-label="Evidence inspector">
       <div className="inspector-header"><div><span className="eyebrow">SELECTED QUERY EVIDENCE</span><strong>Evidence inspector</strong></div><CircleHelp size={17}/></div>

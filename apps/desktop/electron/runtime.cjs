@@ -6,30 +6,37 @@ const path = require('node:path');
 
 const MAX_RESULT_BYTES = 2_000_000;
 const SESSION_PATH = /^\/v1\/sessions\/[a-f0-9]{32}\/turns$/;
+const ARTIFACT_LIST_PATH = /^\/v1\/artifacts\?session_id=[a-f0-9]{32}$/;
+const ARTIFACT_DOWNLOAD_PATH = /^\/v1\/artifacts\/[a-f0-9]{32}\?session_id=[a-f0-9]{32}$/;
 
 function validateRequest(route, options = {}) {
   if (typeof route !== 'string' || route.length > 100) throw new Error('Unsupported BOLT API route');
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid request');
-  const allowed = new Map([['/health', 'GET'], ['/v1/sessions', null], ['/v1/chat', 'POST']]);
+  const allowed = new Map([['/health', 'GET'], ['/v1/catalog', 'GET'], ['/v1/sessions', null], ['/v1/chat', 'POST'], ['/v1/presentations', 'POST']]);
   const method = options.method === undefined ? 'GET' : options.method;
   if (method !== 'GET' && method !== 'POST') throw new Error('Unsupported API method');
-  if (SESSION_PATH.test(route)) {
-    if (method !== 'GET') throw new Error('Session history is read-only');
+  if (SESSION_PATH.test(route) || ARTIFACT_LIST_PATH.test(route) || ARTIFACT_DOWNLOAD_PATH.test(route)) {
+    if (method !== 'GET') throw new Error('Scoped resource is read-only');
   } else if (!allowed.has(route)) {
     throw new Error('Unsupported BOLT API route');
   } else if (route === '/v1/sessions' ? !['GET', 'POST'].includes(method) : allowed.get(route) !== method) {
     throw new Error('Unsupported API method for route');
   }
   let body;
-  if (method === 'POST' && route === '/v1/chat') {
-    if (typeof options.body !== 'string' || options.body.length > 4000) throw new Error('Invalid chat payload');
+  if (method === 'POST' && (route === '/v1/chat' || route === '/v1/presentations')) {
+    if (typeof options.body !== 'string' || options.body.length > 4000) throw new Error('Invalid request payload');
     let data;
     try { data = JSON.parse(options.body); } catch { throw new Error('Invalid JSON payload'); }
+    const validSession = data && typeof data.session_id === 'string' && /^[a-f0-9]{32}$/.test(data.session_id);
+    const validChat = route === '/v1/chat'
+      && Object.keys(data || {}).sort().join(',') === 'question,session_id'
+      && typeof data.question === 'string' && data.question.length >= 1 && data.question.length <= 2000;
+    const validPresentation = route === '/v1/presentations'
+      && Object.keys(data || {}).sort().join(',') === 'session_id,title'
+      && typeof data.title === 'string' && data.title.trim().length >= 1 && data.title.length <= 140;
     if (!data || typeof data !== 'object' || Array.isArray(data)
-        || Object.keys(data).sort().join(',') !== 'question,session_id'
-        || typeof data.session_id !== 'string' || !/^[a-f0-9]{32}$/.test(data.session_id)
-        || typeof data.question !== 'string' || data.question.length < 1 || data.question.length > 2000) {
-      throw new Error('Invalid chat request fields');
+        || !validSession || (!validChat && !validPresentation)) {
+      throw new Error('Invalid request fields');
     }
     body = JSON.stringify(data);
   } else if (options.body !== undefined) {

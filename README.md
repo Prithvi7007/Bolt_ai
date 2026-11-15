@@ -1,10 +1,10 @@
-# ⚡ BOLT AI — Synthetic Desktop Intelligence Workbench
+# ⚡ BOLT AI — Decision Intelligence Workbench
 
 **Ask. Investigate. Prove. Present.**
 
-BOLT is an Electron + React desktop intelligence workbench backed by a Python FastAPI analytics service. It combines a **synthetic chat demo** with a **local-only CSV analysis and guided question-answering lab**. It is not a live Snowflake or LLM integration. The first slice demonstrates evidence-grounded answers, persisted session history, small structured context state, charts and SQL inspection.
+BOLT is an Electron + React desktop intelligence workbench backed by Python FastAPI. The safe local mode provides synthetic and local-CSV analytics. The enterprise service implements a disabled-by-default Snowflake adapter, approved-model gateway, bounded investigations, scoped identity/audit records, editable PowerPoint artifacts and measurable evaluation gates.
 
-> **No real company data, API keys, Snowflake connection, or LLM model is included.** All screenshots, numbers, charts and examples use a generated synthetic revenue fixture.
+> **No real company data, credentials or employer configuration is included.** The repository runs in synthetic mode unless an organization supplies approved identity-proxy, Snowflake, model, retention and deployment settings. Missing enterprise settings fail closed.
 
 ## Download a native test build
 
@@ -17,7 +17,7 @@ GitHub Actions builds unsigned **Windows NSIS x64** and **Linux AppImage x64** p
 
 These are **unsigned** test installers and may trigger SmartScreen or antivirus warnings. The desktop package is version `1.2.0`. Windows CI launches the packaged Electron application and verifies the synthetic Analyst and local CSV Data Lab flows. CI does not verify installer install/uninstall behavior, signing, auto-updates, Linux GUI behavior, or production readiness.
 
-## See the prototype (fastest path)
+## Run the safe local mode
 
 Requirements: Python 3.11+ with pip. Run from repository root:
 
@@ -50,11 +50,13 @@ This launches Vite and Electron. **Electron automatically starts and authenticat
 
 For a native installer, install `services/api/requirements-build.txt` in Python, then run `npm run pack:win` (on Windows) or `npm run pack:linux` (on Linux) inside `apps/desktop`. PyInstaller must run on the target OS. See [desktop runtime details](docs/desktop-sidecar-v02.md) and [native installer verification](docs/native-installers-ci.md).
 
-## Prototype status
+## BOLT v1 implementation status
 
-The synthetic prototype is complete as of November 15, 2026. The implementation plan, API and desktop tests, native Windows/Linux packages, authenticated sidecar, and packaged Windows GUI flow are verified on `main`. See the [prototype closure report](docs/impact/prototype-closure-2026-11-15.md) for exact evidence and the boundary between completed work and future enterprise phases.
+The repository-side BOLT v1 design is implemented on the full-v1 feature branch. Safe local mode remains the default. Enterprise activation still requires organization-owned SSO/proxy configuration, approved Snowflake objects and credentials, an approved model endpoint, retention/export policy, signing certificates and a deployment owner. Those inputs are not stored in this repository.
 
-## Prototype features
+The earlier [synthetic prototype closure](docs/impact/prototype-closure-2026-11-15.md) is retained as a milestone record, not as the end of BOLT development.
+
+## BOLT v1 features
 
 - **Synthetic governed metrics:** 192 generated rows, 2 regions, 4 channels and 24 months. Supported queries: revenue by month/channel/region with 2025, 2026 or recent-12-month scope.
 - **Server-created SQL only:** fixed `SELECT` templates, allowlisted dimensions, parameterized dates, read-only SQLite, 100-row result limit. Unsupported or mutation-like instructions do not execute SQL.
@@ -62,7 +64,12 @@ The synthetic prototype is complete as of November 15, 2026. The implementation 
 - **Ask Your Data (v1.0):** After approving a numeric target, ask supported natural-language questions directly against the imported local CSV. The deterministic router calculates real sums, averages, counts, range, correlations, grouped rankings, observed date-series aggregates, and missingness summaries with explicit formulas and row-count provenance. It rejects forecasting, causal inference, date/category filters, unsupported questions and unapproved alternate metrics rather than fabricating answers. Only bounded aggregates and recent Q&A remain in renderer memory; this does not use an LLM or upload dataset bytes.
 - **Persistent conversation history:** SQLite stores full transcript for display, distinct from a compact working-memory snapshot used to resolve follow-ups.
 - **Evidence inspector:** exact executed SQL, parameters, synthetic query ID, returned table, and provenance.
-- **Token honesty:** no LLM is used in this slice; measured LLM tokens and calls are 0. True token benchmarking starts when a model is integrated.
+- **Approved-model gateway:** optional OpenAI-compatible HTTPS gateway receives only a bounded working context and semantic catalog, returns structured query plans rather than SQL, and records prompt, completion and cached-token usage when the provider reports it.
+- **Governed enterprise query path:** the disabled-by-default Snowflake adapter uses server-side credentials, a read-only role, generated parameterized SELECT statements, an approved object/column policy, bounded rows/time, query tags and query-ID/source/role/freshness evidence.
+- **Bounded investigations:** “why” questions compare approved channel and region dimensions with at most four queries and explicitly label associations as non-causal.
+- **Editable presentations:** the Present workspace creates 3–5 slide PPTX artifacts from stored analyses, including query IDs, sources, assumptions and limitations; the renderer can save them only through a restricted main-process IPC action.
+- **Enterprise identity boundary:** remote enterprise mode refuses to start without an approved identity resolver and rejects missing proxy authentication or unauthorized role mappings.
+- **Measured evaluation:** a reproducible 20-question synthetic benchmark reports accuracy with a Wilson interval, provenance coverage, adversarial write rejection, bounded-context reduction and maximum tool calls.
 - **Visualizations:** chart types from server responses, shown as accessible SVG/CSS graphics with data table fallback.
 - **Electron hardening:** `contextIsolation`, renderer sandboxing, disabled Node integration, blocked arbitrary navigation/windows.
 
@@ -79,31 +86,47 @@ python scripts/smoke_test.py
 
 | Endpoint | Operation |
 |---|---|
-| `GET /health` | shows explicit `synthetic` status |
-| `POST /v1/sessions` | creates conversation |
-| `GET /v1/sessions` | lists conversations |
-| `GET /v1/sessions/{id}/turns` | retrieves persisted UI history |
-| `POST /v1/chat` | accepts `{ "session_id": "...", "question": "..." }` |
+| `GET /health` | reports mode, version, connector states and capabilities |
+| `GET /v1/catalog` | lists approved semantic metrics and compatible dimensions |
+| `POST /v1/sessions` | creates an identity-scoped conversation |
+| `GET /v1/sessions` | lists identity-scoped conversations |
+| `GET /v1/sessions/{id}/turns` | retrieves the persisted conversation ledger |
+| `POST /v1/chat` | executes a bounded evidence-backed question or investigation |
+| `POST /v1/presentations` | creates an editable PPTX from stored analyses |
+| `GET /v1/artifacts` | lists session-scoped artifacts |
+| `GET /v1/artifacts/{id}` | returns a session-scoped artifact to trusted desktop IPC |
 
 ## Architecture
 
 ```text
-Electron main (sandboxed window; random bearer token held outside renderer)
-  ├─ React + TypeScript analyst workspace (restricted preload IPC)
-  └─ managed Python FastAPI child on a random 127.0.0.1 port
-            └─ FastAPI → query intent router → allowlisted SQL templates
-                       ├─ read-only synthetic SQLite fixture
-                       └─ session SQLite ledger + bounded memory state
+Electron main (sandboxed window; private loopback bearer token)
+  ├─ React workspace: Analyst | Data Lab | Explore | Present
+  ├─ restricted request and artifact-save IPC
+  └─ safe local FastAPI sidecar on random 127.0.0.1 port
+       ├─ synthetic read-only SQLite adapter
+       ├─ bounded working memory + complete conversation ledger
+       ├─ association investigation workflow
+       └─ editable PPTX artifact service
+
+Organization-hosted FastAPI (separate approved runtime)
+  ├─ trusted SSO/identity-proxy boundary + role mapping
+  ├─ semantic catalog and structured model plans
+  ├─ fail-closed Snowflake read-only adapter
+  ├─ query tags, audit events and scoped artifact indexes
+  └─ optional approved HTTPS model gateway
 ```
 
-## Current prototype limitations
+## Activation boundaries
 
-Snowflake/Cortex, live LLM calls, LangGraph execution, PPTX generation, production identity/SSO, audit policies, organizational access control, automatic queries across unknown schemas and real token optimization measurement are **future milestones**, not claimed features. Neither the preview nor the packaged synthetic prototype is suitable for real company data. Production requires approved identity, authorization, permissions, safe data connectors, model hosting, telemetry and an independent security review.
+The connectors and security boundaries are implemented but are not proof of employer authorization or production readiness. Real-company-data use remains blocked until the organization supplies and approves its SSO/identity proxy, Snowflake role and semantic object, model endpoint, retention/export rules, telemetry, security review and deployment environment. The native installers are unsigned; macOS, installer lifecycle, auto-update and Linux GUI automation are not verified. The safe local mode must not be used with employer data.
 
 ## Engineering records
 
 - Spec: `docs/superpowers/specs/2026-11-13-bolt-ai-v1-design.md`
 - Slice A plan: `docs/superpowers/plans/2026-11-13-bolt-slice-a.md`
+- Full v1 completion plan: `docs/superpowers/plans/2026-11-15-bolt-v1-complete.md`
+- Enterprise activation: `docs/enterprise-activation.md`
+- V1 evaluation: `docs/impact/v1-evaluation.md`
 - Impact/measurement plan: `docs/impact/prototype-metrics.md`
 
 The prototype source is published in [Prithvi7007/Bolt_ai](https://github.com/Prithvi7007/Bolt_ai). Native CI validates Windows and Linux packaging, the authenticated bundled backend, and the packaged Windows graphical workflow with synthetic data. Keep secrets and business data out of Git.

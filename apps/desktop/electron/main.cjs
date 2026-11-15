@@ -61,6 +61,39 @@ app.whenReady().then(async () => {
       if (!backend) throw new Error('BOLT local backend is unavailable');
       return backend.request(route, options);
     });
+    ipcMain.handle('bolt:save-artifact', async (event, artifactId, sessionId, filename) => {
+      const source = event.senderFrame?.url;
+      if (!isAllowedNavigation(source, process.env.BOLT_DEV === '1',
+          DEV_URL, path.join(__dirname, '../dist/index.html'))) {
+        throw new Error('Unauthorized BOLT renderer');
+      }
+      if (!backend) throw new Error('BOLT local backend is unavailable');
+      if (!/^[a-f0-9]{32}$/.test(artifactId) || !/^[a-f0-9]{32}$/.test(sessionId)) {
+        throw new Error('Invalid artifact reference');
+      }
+      const safeName = path.basename(String(filename || 'BOLT_brief.pptx'));
+      if (!safeName.endsWith('.pptx') || safeName.length > 100 || safeName !== filename) {
+        throw new Error('Invalid presentation filename');
+      }
+      const response = await backend.request(
+        `/v1/artifacts/${artifactId}?session_id=${sessionId}`
+      );
+      if (!response.ok || typeof response.data?.content_base64 !== 'string') {
+        throw new Error('Presentation artifact is unavailable');
+      }
+      const bytes = Buffer.from(response.data.content_base64, 'base64');
+      if (bytes.length < 4 || bytes.length > 10_000_000 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+        throw new Error('Invalid presentation artifact');
+      }
+      const choice = await dialog.showSaveDialog({
+        title: 'Save BOLT presentation',
+        defaultPath: safeName,
+        filters: [{name: 'PowerPoint Presentation', extensions: ['pptx']}],
+      });
+      if (choice.canceled || !choice.filePath) return {saved:false};
+      fs.writeFileSync(choice.filePath, bytes, {flag:'wx'});
+      return {saved:true};
+    });
     createWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
