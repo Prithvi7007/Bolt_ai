@@ -1,20 +1,26 @@
-# BOLT v0.1 — Verification Evidence
+# BOLT v1.2 — Verification Evidence
 
-**Date:** 2026-11-13 (America/New_York)
+**Date:** 2026-11-15 (America/New_York)  
+**Verified main commit:** `246eb81ca23a2511f7acb2463eb2aae1d9d8631d`  
+**Post-merge workflow:** https://github.com/Prithvi7007/Bolt_ai/actions/runs/43695559428
 
 | Check | Result | Evidence |
 |---|---|---|
-| Backend TDD suite | PASS | `PYTHONPATH=services/api pytest services/api/tests -q` — 18 passed |
-| Synthetic analysis flow | PASS | `python scripts/smoke_test.py` — health → channels → regions → persisted replay |
-| Python syntax | PASS | `python -m compileall -q services/api/bolt` |
-| Electron main JS syntax | PASS | `node --check apps/desktop/electron/main.cjs` |
-| Browser preview inline JS syntax | PASS | `node --check /tmp/bolt-preview-inline.js` (script extracted from preview) |
-| React/TSX parse | PASS (syntax only) | `typescript.transpileModule` on `App.tsx`, `main.tsx`, `vite.config.ts` — no syntax errors |
-| Live Python API health | PASS | `curl http://127.0.0.1:8787/health` showed synthetic mode |
-| npm install / Vite build | BLOCKED | npm registry DNS `EAI_AGAIN`; no compiled Electron distributable |
-| Automated GUI/browser interaction | BLOCKED | sandbox browser policy returned `net::ERR_BLOCKED_BY_ADMINISTRATOR` for file and loopback URLs |
-| Snowflake, LLM, PPTX | NOT IMPLEMENTED | Future slices, not used for synthetic prototype |
+| Python/API/contract suite | PASS | 38 tests; one existing Starlette deprecation warning |
+| Electron and local-data Node suites | PASS | 42 tests across navigation, runtime, CSV profiling, target analysis and question routing |
+| TypeScript/Vite production build | PASS | Native Windows and Linux workflow jobs |
+| Windows native package | PASS | Unsigned NSIS x64 artifact |
+| Linux native package | PASS | Unsigned AppImage x64 artifact |
+| Packaged backend | PASS | Authenticated loopback health, synthetic revenue/SQL evidence and persisted SQLite history |
+| Packaged Windows Electron GUI | PASS | Analyst chart/SQL/data inspection, CSV import, target approval, local total and timeline coverage, restart persistence |
+| Linux graphical UI | NOT VERIFIED | Linux CI verifies packaging and the bundled backend only |
+| Install/uninstall and code signing | NOT VERIFIED | Manual installer lifecycle and signing remain outside the prototype gate |
+| Snowflake, LLM, LangGraph and PPTX | NOT IMPLEMENTED | Future enterprise phases; never used by the synthetic prototype |
 
-**Interpretation:** Verified Python behavior and syntactic soundness of the client source; a working compiled Electron binary has not been demonstrated in this environment. The HTML preview uses the real API if run on a local machine with browser access.
+## Interpretation
 
-**Security boundary:** demo API has no identity/authentication. Loopback-only synthetic development use, not approved for company data or public hosting.
+The synthetic desktop prototype is complete and reproducible from the repository. The Windows package has been executed graphically in CI; both native packages have executed their bundled authenticated Python service. The evidence does not establish production readiness, enterprise data authorization, Linux GUI behavior, signed-installer reputation or real-model quality.
+
+## Security boundary
+
+The packaged Electron main process generates a private bearer token and starts the Python service on a random loopback port. The sandboxed renderer uses a restricted preload bridge and never receives the token. Synthetic Analyst data and user-selected local CSVs are separate flows. The app is not approved for company data or public hosting.

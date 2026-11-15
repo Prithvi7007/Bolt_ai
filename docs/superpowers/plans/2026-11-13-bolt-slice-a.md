@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Status:** Prototype source authored; backend, browser-preview source, and safety checks verified. Electron build not verified (offline npm registry).
+**Status:** COMPLETE — synthetic Slice A and the local CSV extensions are implemented and verified. Main commit `246eb81ca23a2511f7acb2463eb2aae1d9d8631d` passed native Windows/Linux CI on November 15, 2026.
 
 **Goal:** Ship a runnable Electron + React desktop prototype that calls a Python FastAPI service, answers a small set of questions over synthetic revenue data, persists conversations, and exposes SQL evidence without replaying full chat history.
 
@@ -62,7 +62,7 @@
 - `GET /health`, `POST /v1/sessions`, `GET /v1/sessions`, `GET /v1/sessions/{id}/turns`, `POST /v1/chat`.
 - Response has `answer`, `evidence.sql`, `evidence.query_id`, `evidence.source`, `data.columns/rows`, `chart.type/labels/values`, and `cost.prompt_tokens=0` in synthetic mode.
 
-- [ ] Write API tests for health, supported question and real query evidence, follow-up resolution, unsupported questions, non-existent session, persistence across app instances, bounded row count.
+- [x] Write API tests for health, supported question and real query evidence, follow-up resolution, unsupported questions, non-existent session, persistence across app instances, bounded row count.
 - [x] Verify targeted tests initially fail for expected absence/behavior.
 - [x] Implement deterministic computation and accurate narrative from returned rows; no LLM calls.
 - [x] Run full backend suite with `pytest services/api/tests -q`.
@@ -75,15 +75,24 @@
 - [x] Create source checks for Electron security flags, no API keys, and no unapproved external renderer URLs.
 - [x] Verify checks fail against missing shell.
 - [x] Implement single-window layout following approved UI/UX Pro Max design tokens and keyboard-accessible controls.
-- [x] Run source checks; Vite build not available because npm registry DNS is blocked. Full build remains pending.
+- [x] Run source checks, TypeScript/Vite production builds, Windows NSIS and Linux AppImage packaging, authenticated packaged-backend checks, and packaged Windows Electron GUI verification.
 
 ### Task 5: Developer Handoff & Smoke Validation
 **Files:** `README.md`, `.gitignore`, `docs/impact/prototype-metrics.md`, `scripts/run-api.sh`, `scripts/run-desktop.sh`, `scripts/smoke_test.py`.
 
 - [x] Add scripted smoke scenario for create-session → question → chart/table evidence → follow-up → persisted replay.
-- [x] Confirm initial missing-contract test failures, then verified smoke positive path; live browser test could not run due browser policy.
-- [x] Run `pytest services/api/tests -q`, smoke test and desktop static security checks; actual desktop build pending npm availability.
+- [x] Confirm initial missing-contract failures, then verify the API smoke path and the packaged Windows Electron GUI path.
+- [x] Run the full API suite, desktop source suite, native builds, packaged-backend smoke tests, and packaged Windows GUI test.
 - [x] Document results and limitations without claiming production or Snowflake/LLM functionality.
+
+## Completion evidence
+
+- 38 Python/API/contract tests pass; one existing Starlette deprecation warning remains.
+- 42 Node tests pass across Electron navigation/runtime, CSV profiling, local analysis, and restricted question routing.
+- Windows NSIS x64 and Linux AppImage x64 packages build from the committed lockfile.
+- The packaged backend rejects unauthenticated requests and returns synthetic answers with SQL evidence and persisted history.
+- The packaged Windows Electron GUI verifies synthetic Analyst results, CSV import, target approval, local calculations, timeline coverage, and restart persistence.
+- Post-merge workflow: https://github.com/Prithvi7007/Bolt_ai/actions/runs/43695559428
 
 ## Future slices (NOT implemented here)
 - B: approved Snowflake connection, query-parser validation, governance, signed query/metric registry, charts and exports.

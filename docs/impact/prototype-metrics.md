@@ -1,17 +1,22 @@
 # BOLT — Measurable Impact Ledger
 
-## Synthetic v0.1 (development verification only)
-- Primary flow: 1 session → 2026 channel breakdown → regional follow-up → restart → persisted replay.
-- Data provenance: generated CSV fixture; every computed answer includes read-only SQLite SELECT and bound dates.
-- Actual LLM calls: 0 (no model integrated). Tokens saved compared with full-history model prompts: **not measurable yet**.
-- Real Snowflake accesses: 0; warehouse costs: 0; no private enterprise data.
-- Promotion impact: **not yet measured** — this is a prototype, not enterprise deployment.
+## Synthetic v1.2 prototype closure
 
-## Experiments to run after approved model/Snowflake integration
-1. Accuracy on 30+ business questions with adjudicated answers and ambiguous-business-term cases.
-2. Full-history prompts vs bounded-context prompts: average input/output/cached tokens and cost per successful question.
-3. First-answer latency, multi-turn resolution, SQL compilation correctness, unauthorized-query rejection.
-4. Data/source evidence completeness, business metric conformance, error and uncertainty rates.
-5. Task completion, minutes saved, slide-generation quality and adoption for authorized internal pilots.
+- Primary synthetic flow: session → 2026 channel breakdown → regional follow-up → restart → persisted replay.
+- Local Data Lab flow: UTF-8 CSV import → streaming profile → human target approval → descriptive analysis → restricted evidence-backed questions.
+- Data provenance: generated fixture or user-selected local CSV; remote synthetic answers include read-only SQLite SQL evidence, while local CSV calculations disclose formulas and row coverage.
+- Actual LLM calls: 0. Tokens saved against a model baseline: not measurable because no model is integrated.
+- Real Snowflake accesses: 0. Warehouse cost: 0. Private enterprise data: 0.
+- Automated verification: 38 Python/API/contract tests and 42 Node tests.
+- Native delivery: Windows NSIS x64 and Linux AppImage x64 packages build in CI; packaged Windows graphical flow and both bundled backends pass.
+- Production impact: not measured. This is a completed synthetic prototype, not an enterprise deployment.
 
-Each metric should include denominator, experiment design, CI where practical, real source provenance and limitations.
+## Required evidence for a future enterprise phase
+
+1. Accuracy on at least 30 adjudicated business questions, including ambiguous metric definitions.
+2. Full-history versus bounded-context prompts: input, output and cached tokens per successful question.
+3. First-answer latency, multi-turn resolution accuracy, SQL validation and unauthorized-query rejection.
+4. Query ID, metric-definition and freshness completeness for every data-derived answer.
+5. Authorized pilot task completion, analyst minutes saved, artifact quality and user satisfaction.
+
+Each metric must include its denominator, experiment design, source provenance, limitations and a confidence interval where practical.
