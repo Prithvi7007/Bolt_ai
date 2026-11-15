@@ -141,6 +141,13 @@ def main() -> None:
     args = parser.parse_args()
     try:
         verify(args.executable, startup_timeout=args.startup_timeout)
+        # Windows CI also verifies the packaged graphical Electron workflow.
+        if sys.platform == "win32" and os.environ.get("GITHUB_ACTIONS") == "true":
+            gui_test = Path(__file__).with_name("verify_electron_gui.mjs")
+            subprocess.run(
+                ["node", str(gui_test), "--backend", str(args.executable)],
+                check=True, timeout=240,
+            )
     except Exception as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         raise SystemExit(1)
