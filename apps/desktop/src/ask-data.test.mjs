@@ -21,6 +21,18 @@ function fileFromText(source=csv) {
 }
 const ask = question => answerDataQuestion(fileFromText(),question,profile,'revenue');
 
+test('timeline evidence discloses rows omitted for missing or invalid dates', async()=>{
+  const dated = Array.from({length:19},(_,i)=>'2026-01-'+String(i+1).padStart(2,'0')+',1');
+  const source = ['date,revenue',...dated,',1','invalid,1',','].join('\n');
+  const result = await answerDataQuestion(fileFromText(source),
+    'Show revenue trend over time',profileCsvText(source),'revenue');
+  assert.equal(result.kind,'answered');
+  assert.match(result.evidence,/21 numeric target rows \/ 22 accepted rows/);
+  assert.match(result.evidence,/19 rows represented in date buckets/);
+  assert.match(result.evidence,/2 missing or invalid date rows/);
+  assert.match(result.evidence,/0 valid date rows omitted at the date limit/);
+});
+
 test('answers an explicitly requested predictor even when it is outside the top twelve correlations', async()=>{
   const names = Array.from({length:13}, (_,i)=>'signal_'+i);
   const lines = ['revenue,'+names.join(',')+',weak_signal'];

@@ -164,7 +164,10 @@ function result(kind, title, answer, calculation, report, table = [], extra = []
   return {
     kind:'answered', title, answer, calculation, table,
     evidence:'On-device CSV scan · ' + fmt(report.validRows) + ' numeric target rows / '
-      + fmt(report.scannedRows) + ' accepted rows · ' + fmt(report.excludedTargetRows) + ' missing or invalid target rows',
+      + fmt(report.scannedRows) + ' accepted rows · ' + fmt(report.excludedTargetRows) + ' missing or invalid target rows'
+      + (report.dateColumn ? ' · ' + fmt(report.timelineRows) + ' rows represented in date buckets · '
+        + fmt(report.excludedDateRows) + ' missing or invalid date rows · '
+        + fmt(report.datedTargetRows - report.timelineRows) + ' valid date rows omitted at the date limit' : ''),
     warnings: [...extra, ...report.warnings],
   };
 }

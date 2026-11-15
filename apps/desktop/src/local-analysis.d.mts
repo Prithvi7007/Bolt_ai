@@ -23,6 +23,9 @@ export type LocalAnalysisReport = {
   checkedPredictorColumns: number;
   groups: GroupRow[];
   timeline: TimelineRow[];
+  datedTargetRows: number;
+  excludedDateRows: number;
+  timelineRows: number;
   dateLimited: boolean;
   groupsLimited: boolean;
   warnings: string[];

@@ -105,6 +105,7 @@ export default function LocalAnalysis({file, profile, target}: {file: File; prof
             <button aria-pressed={aggregation === 'mean'} className={aggregation === 'mean' ? 'active' : ''} onClick={() => setAggregation('mean')}>Mean</button>
           </div>
         </div>
+        <p className="lab-timeline-coverage">{report.timelineRows.toLocaleString()} of {report.validRows.toLocaleString()} valid target rows represented in date buckets; {report.excludedDateRows.toLocaleString()} missing or invalid date rows; {(report.datedTargetRows-report.timelineRows).toLocaleString()} valid date rows omitted at the date limit.</p>
         <Timeline report={report} aggregation={aggregation}/>
       </div>}
       <div className="lab-analysis-notes"><h4><AlertTriangle size={16}/> Interpretation and limitations</h4>
