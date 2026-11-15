@@ -2,6 +2,7 @@ import {useState, type ChangeEvent, type DragEvent} from 'react';
 import {Activity, Check, ChevronRight, Database, FileSpreadsheet, HardDriveDownload,
         Info, RefreshCcw, ShieldCheck, Sparkles, UploadCloud, AlertTriangle} from 'lucide-react';
 import {profileCsvFile, type DatasetProfile} from './dataset-understanding.mjs';
+import LocalAnalysis from './LocalAnalysis';
 import './dataset-lab.css';
 
 function Metric({label, value, detail}: {label: string; value: string; detail: string}) {
@@ -12,6 +13,7 @@ function Metric({label, value, detail}: {label: string; value: string; detail: s
 
 export default function DatasetLab() {
   const [profile, setProfile] = useState<DatasetProfile | null>(null);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [selectedTarget, setSelectedTarget] = useState('');
   const [approvedTarget, setApprovedTarget] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,10 +29,12 @@ export default function DatasetLab() {
     setBusy(true);
     setError('');
     setProfile(null);
+    setSourceFile(null);
     setApprovedTarget('');
     try {
       const result = await profileCsvFile(file);
       setProfile(result);
+      setSourceFile(file);
       setSelectedTarget(result.suggestedTargets[0]?.name || '');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to read this CSV file');
@@ -80,7 +84,7 @@ export default function DatasetLab() {
       {profile && <>
         <section className="lab-result" aria-label="Dataset understanding results">
           <div className="lab-result-header"><div><span className="lab-overline">DATASET PROFILE</span><h2><Database size={21}/>{profile.fileName}</h2><small>Profiling complete · No model or external API used</small></div>
-            <button className="lab-reset" onClick={() => {setProfile(null); setSelectedTarget(''); setApprovedTarget('');}}><RefreshCcw size={14}/> Clear</button>
+            <button className="lab-reset" onClick={() => {setProfile(null); setSourceFile(null); setSelectedTarget(''); setApprovedTarget('');}}><RefreshCcw size={14}/> Clear</button>
           </div>
           <div className="lab-metrics">
             <Metric label="VALID ROWS" value={profile.rowCount.toLocaleString()} detail="Full file scanned"/>
@@ -126,17 +130,19 @@ export default function DatasetLab() {
             <button onClick={() => setApprovedTarget(selectedTarget)} disabled={!selectedTarget}><Check size={16}/> Approve target</button>
           </div>
           {selectedTarget && <p className="lab-target-rationale"><Info size={15}/>{profile.suggestedTargets.find(item => item.name === selectedTarget)?.reason || 'Selected numeric column; confirm it represents the intended outcome.'}</p>}
-          {approvedTarget && <div className="lab-approved" role="status"><Check size={18}/><div><strong>Target approved: {approvedTarget}</strong><p>Dataset structure and objective are ready for a future modeling workflow. This release does not train a model or send data to an AI provider.</p></div></div>}
+          {approvedTarget && <div className="lab-approved" role="status"><Check size={18}/><div><strong>Target approved: {approvedTarget}</strong><p>The objective is ready. Run local descriptive analysis below; no data is sent to an AI provider, and no model is trained.</p></div></div>}
         </section>
 
+        {approvedTarget && sourceFile && <LocalAnalysis key={approvedTarget} file={sourceFile} profile={profile} target={approvedTarget}/>}
+
         <section className="lab-panel lab-preview-panel" aria-label="CSV data preview">
-          <div className="lab-panel-title"><span>05 / VERIFY</span><h3>Source preview</h3></div>
+          <div className="lab-panel-title"><span>06 / VERIFY</span><h3>Source preview</h3></div>
           <div className="lab-table-scroll"><table className="lab-table lab-preview"><thead><tr>{profile.columns.map(col => <th key={col.name}>{col.name}</th>)}</tr></thead>
             <tbody>{profile.preview.map((row, index) => <tr key={index}>{row.map((cell, col) => <td key={col} title={cell}>{cell || '—'}</td>)}</tr>)}</tbody></table></div>
           <p className="lab-table-note">First five valid rows shown. Preview values are truncated to 160 characters; all valid rows contribute to profile statistics. {profile.rejectedRows ? profile.rejectedRows + ' malformed rows were excluded.' : ''}</p>
         </section>
       </>}
-      <div className="lab-bottom-note"><ShieldCheck size={14}/> BOLT Data Lab is a transparent deterministic profiling tool in this milestone. The Analyst chat still runs separately on synthetic demo data.</div>
+      <div className="lab-bottom-note"><ShieldCheck size={14}/> BOLT Data Lab provides transparent local profiling and descriptive target analysis. The separate Analyst chat still uses synthetic demo data.</div>
     </div>
   </main>;
 }

@@ -1,0 +1,47 @@
+.lab-analysis{margin-top:16px;background:#152238;border:1px solid #2B3B55;border-radius:12px;padding:23px;min-width:0}
+.lab-analysis-controls{display:flex;align-items:end;gap:14px;margin:14px 0 0;flex-wrap:wrap}
+.lab-analysis-controls>div{display:flex;flex-direction:column;gap:9px;width:min(100%,410px)}
+.lab-analysis-controls label{font-size:10px;color:#99ABCB;font-weight:750;letter-spacing:1.25px}
+.lab-analysis-controls select{padding:12px 15px;border:1px solid #415577;border-radius:8px;background:#1D304D;color:#F1F5FC;font-size:12px}
+.lab-analyze-button{display:flex;gap:9px;align-items:center;justify-content:center;border:1px solid #3E7BFA;background:#2563EB;color:white;border-radius:8px;padding:12px 16px;font-size:12px;font-weight:700;cursor:pointer}
+.lab-analyze-button:disabled{opacity:.6;cursor:wait}
+.lab-analysis-results{margin-top:22px}
+.lab-analysis-provenance{display:flex;gap:10px;align-items:center;color:#AAEBDC;background:#143739;border:1px solid #2D5B57;border-radius:8px;padding:12px;font-size:12px;line-height:1.5}
+.lab-analysis-provenance svg{flex-shrink:0}
+.lab-analysis-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin:17px 0}
+.lab-analysis-kpis>div{padding:15px 17px;background:#1A2C44;border:1px solid #324560;border-radius:10px;min-width:0}
+.lab-analysis-kpis span{display:block;color:#9CB1D0;font-size:9px;font-weight:750;letter-spacing:1.2px;overflow-wrap:anywhere}
+.lab-analysis-kpis strong{display:block;margin-top:12px;color:#F0F6FD;font-size:19px;line-height:1.4;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.lab-analysis-dual{display:grid;grid-template-columns:1fr 1fr;gap:14px;min-width:0}
+.lab-analysis-section{border:1px solid #33445E;border-radius:10px;padding:18px;min-width:0}
+.lab-analysis-section h4,.lab-analysis-notes h4{display:flex;align-items:center;gap:8px;color:#EDF4FD;font-size:13px;margin:0 0 8px}
+.lab-analysis-section h4 svg{color:#80B5FF}
+.lab-analysis-section p{font-size:11px;line-height:1.7;color:#8EA6C6;margin:0 0 15px}
+.lab-analysis-section small{display:block;color:#748DAB;font-size:10px;margin-top:14px;line-height:1.6}
+.lab-correlation-list{display:grid;gap:14px}
+.lab-correlation>div:first-child{display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-bottom:7px}
+.lab-correlation strong{color:#DAE7F9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lab-correlation span{white-space:nowrap;color:#8BA5CA;font-variant-numeric:tabular-nums}
+.lab-correlation-track{height:6px;background:#273A54;border-radius:5px;overflow:hidden}
+.lab-correlation-track>div{height:100%;border-radius:5px}
+.lab-analysis-table-wrap{max-width:100%;overflow:auto}
+.lab-analysis-table-wrap table{border-collapse:collapse;width:100%;font-size:11px}
+.lab-analysis-table-wrap th,.lab-analysis-table-wrap td{text-align:left;padding:10px 8px;border-bottom:1px solid #2B3D56;white-space:nowrap}
+.lab-analysis-table-wrap th{color:#91A8C9;font-size:10px}
+.lab-analysis-table-wrap td{color:#D7E3F4;font-variant-numeric:tabular-nums}
+.lab-analysis-table-wrap tr:last-child td{border-bottom:none}
+.lab-analysis-empty{color:#9EB1CA!important;font-size:11px;line-height:1.6}
+.lab-timeline-section{margin-top:14px}
+.lab-analysis-timeline-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.lab-timeline-toggle{display:flex;background:#203450;padding:3px;border-radius:8px;flex-shrink:0}
+.lab-timeline-toggle button{font-size:11px;padding:7px 13px;background:transparent;color:#AFC2D8;border:0;border-radius:6px}
+.lab-timeline-toggle button.active{background:#3763A2;color:white}
+.lab-series{width:100%}
+.lab-series svg{display:block;width:100%;height:160px;background:#15243A;border-radius:9px}
+.lab-series-range,.lab-series-dates{display:flex;justify-content:space-between;gap:10px;font-size:10px;color:#9AAFCB;font-variant-numeric:tabular-nums;margin:8px 0}
+.lab-analysis-notes{border:1px solid #614C36;background:#302A2B;border-radius:9px;padding:16px;margin-top:14px}
+.lab-analysis-notes h4 svg{color:#F2BA78}
+.lab-analysis-notes p{font-size:11px;line-height:1.7;color:#DBC9B3;margin:6px 0 0;padding-left:23px}
+.lab-analysis-footer{display:flex;gap:8px;align-items:center;color:#889FC1;font-size:10px;margin:15px 0 0;line-height:1.6}
+@media(max-width:1100px){.lab-analysis-dual{grid-template-columns:1fr}.lab-analysis-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.lab-analysis{padding:17px}.lab-analysis-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lab-analysis-timeline-header{flex-direction:column}.lab-analysis-controls{align-items:stretch;flex-direction:column}}

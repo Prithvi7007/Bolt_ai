@@ -24,3 +24,18 @@ def test_csv_data_is_never_transmitted_to_the_synthetic_backend():
         assert network_call not in lab
     assert "target" in lab.lower() and "Approve target" in lab
     assert "No file contents are sent" in lab
+
+def test_local_analysis_regressions_and_network_boundary():
+    suite = ROOT / "apps" / "desktop" / "src" / "local-analysis.test.mjs"
+    result = subprocess.run(
+        ["node", "--test", str(suite)],
+        capture_output=True, text=True, timeout=35,
+    )
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
+    analysis = (ROOT / "apps" / "desktop" / "src" / "local-analysis.mjs").read_text()
+    analysis_ui = (ROOT / "apps" / "desktop" / "src" / "LocalAnalysis.tsx").read_text()
+    for network_call in ("fetch(", "XMLHttpRequest", "sendBeacon(", "boltApi.request("):
+        assert network_call not in analysis
+        assert network_call not in analysis_ui
+    assert "analyzeCsvFile(file" in analysis_ui
+    assert "No remote request" in analysis_ui

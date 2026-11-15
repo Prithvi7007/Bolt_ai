@@ -1,0 +1,179 @@
+/**
+ * BOLT local descriptive analysis. Reads CSV using the existing streaming parser
+ * and holds only bounded sufficient statistics, never individual source rows.
+ * Not regression, a forecast, causality, or an LLM.
+ */
+import {createCsvProfiler, scanCsvFile} from './dataset-understanding.mjs';
+
+const NUMBER = /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$/;
+const NULLS = new Set(['', 'null', 'na', 'n/a']);
+const PREDICTOR_LIMIT = 256;
+const GROUP_LIMIT = 16;
+const DATE_LIMIT = 512;
+
+function numeric(text) {
+  const v = String(text).trim();
+  if (NULLS.has(v.toLowerCase()) || !NUMBER.test(v)) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function dateKey(raw) {
+  const v = String(raw).trim();
+  const m = /^(\d{4})[-/](\d{2})(?:[-/](\d{2}))?$/.exec(v);
+  if (!m) return null;
+  const y = Number(m[1]), month = Number(m[2]), day = m[3] ? Number(m[3]) : 1;
+  const date = new Date(Date.UTC(y, month - 1, day));
+  if (y < 1900 || y > 2200 || date.getUTCFullYear() !== y
+      || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return m[3] ? m[1] + '-' + m[2] + '-' + m[3] : m[1] + '-' + m[2];
+}
+
+function newPair(name, index) {
+  return {name, index, n: 0, meanX: 0, meanY: 0, m2X: 0, m2Y: 0, covariance: 0};
+}
+
+function addPair(p, x, y) {
+  p.n++;
+  const dx = x - p.meanX, dy = y - p.meanY;
+  p.meanX += dx / p.n;
+  p.meanY += dy / p.n;
+  p.m2X += dx * (x - p.meanX);
+  p.m2Y += dy * (y - p.meanY);
+  p.covariance += dx * (y - p.meanY);
+}
+
+function collector(options) {
+  if (!options || typeof options.target !== 'string' || !options.target.trim()) {
+    throw new Error('Approve a numeric target before running analysis');
+  }
+  const target = options.target;
+  const dimension = options.dimension || null;
+  const dateColumn = options.dateColumn || null;
+  if (target === dimension || target === dateColumn) throw new Error('Target must be separate from date and group columns');
+  let targetIndex = -1, dimensionIndex = -1, dateIndex = -1;
+  let pairs = null;
+  let retainedPredictorCount = 0;
+  let predictorLimited = false;
+  let valid = 0, mean = 0, m2 = 0, sum = 0, min = null, max = null;
+  let dateLimited = false, groupsLimited = false;
+  const dates = new Map(), groups = new Map();
+  const OVERFLOW = '\u0000other';
+
+  function consume(headers, values) {
+    if (!pairs) {
+      targetIndex = headers.indexOf(target);
+      dimensionIndex = dimension === null ? -1 : headers.indexOf(dimension);
+      dateIndex = dateColumn === null ? -1 : headers.indexOf(dateColumn);
+      if (targetIndex < 0) throw new Error('Target column is not present in the dataset');
+      if (dimension !== null && dimensionIndex < 0) throw new Error('Group column is not present');
+      if (dateColumn !== null && dateIndex < 0) throw new Error('Date column is not present');
+      const predictorHeaders = headers.map((name, index) => ({name, index}))
+        .filter(({index}) => ![targetIndex, dateIndex, dimensionIndex].includes(index));
+      retainedPredictorCount = Math.min(predictorHeaders.length, PREDICTOR_LIMIT);
+      predictorLimited = predictorHeaders.length > PREDICTOR_LIMIT;
+      pairs = predictorHeaders.slice(0, PREDICTOR_LIMIT).map(({name, index}) => newPair(name, index));
+    }
+    const y = numeric(values[targetIndex]);
+    if (y === null) return;
+    valid++;
+    sum += y;
+    const delta = y - mean;
+    mean += delta / valid;
+    m2 += delta * (y - mean);
+    min = min === null ? y : Math.min(min, y);
+    max = max === null ? y : Math.max(max, y);
+
+    for (const p of pairs) {
+      const x = numeric(values[p.index]);
+      if (x !== null) addPair(p, x, y);
+    }
+
+    if (dimensionIndex >= 0) {
+      const label = values[dimensionIndex].trim() || '(blank)';
+      let key = label;
+      if (!groups.has(key) && groups.size >= GROUP_LIMIT + (groups.has(OVERFLOW) ? 1 : 0)) {
+        key = OVERFLOW;
+        groupsLimited = true;
+      }
+      const entry = groups.get(key) || {label: key === OVERFLOW ? 'Additional groups' : label, sum: 0, n: 0};
+      entry.sum += y;
+      entry.n++;
+      groups.set(key, entry);
+    }
+
+    if (dateIndex >= 0) {
+      const key = dateKey(values[dateIndex]);
+      if (key !== null) {
+        if (!dates.has(key) && dates.size >= DATE_LIMIT) {
+          dateLimited = true;
+        } else {
+          const entry = dates.get(key) || {date: key, sum: 0, n: 0};
+          entry.n++;
+          entry.sum += y;
+          dates.set(key, entry);
+        }
+      }
+    }
+  }
+
+  function finish(profile) {
+    const targetProfile = profile.columns.find(col => col.name === target);
+    if (!targetProfile || targetProfile.type !== 'numeric') {
+      throw new Error('Approved target must be a consistently numeric column');
+    }
+    if (dimension && profile.columns.find(col => col.name === dimension)?.type !== 'categorical') {
+      throw new Error('Group column must be categorical');
+    }
+    if (dateColumn && profile.columns.find(col => col.name === dateColumn)?.type !== 'date') {
+      throw new Error('Date column must be date-formatted');
+    }
+    const corrs = (pairs || []).filter(p =>
+      profile.columns.find(col => col.name === p.name)?.type === 'numeric'
+      && p.n >= 3 && p.m2X > 0 && p.m2Y > 0
+    ).map(p => ({
+      column: p.name, pairedRows: p.n,
+      correlation: Math.max(-1, Math.min(1, p.covariance / Math.sqrt(p.m2X * p.m2Y))),
+    })).sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation)
+      || a.column.localeCompare(b.column));
+    const groupRows = [...groups.values()].map(row => ({
+      label: row.label, rows: row.n, sum: row.sum, mean: row.sum / row.n,
+    })).sort((a, b) => b.rows - a.rows || a.label.localeCompare(b.label));
+    const timeline = [...dates.values()].sort((a, b) => a.date.localeCompare(b.date))
+      .map(row => ({date: row.date, rows: row.n, sum: row.sum, mean: row.sum / row.n}));
+
+    const warnings = [];
+    if (profile.rejectedRows) warnings.push(profile.rejectedRows + ' malformed CSV records were excluded');
+    if (profile.rowCount - valid) warnings.push((profile.rowCount - valid) + ' valid CSV rows had missing or nonnumeric target values');
+    if (valid < 3) warnings.push('Very few valid target values; interpret patterns cautiously');
+    if (valid && min === max) warnings.push('Target has no variation; correlations are undefined');
+    if (dateLimited) warnings.push('Date series is limited to the first 512 distinct dates encountered; it is not complete');
+    if (groupsLimited) warnings.push('Only the first 16 distinct groups are shown individually; remaining groups are aggregated');
+    if (predictorLimited) warnings.push('Correlation checks are limited to the first 256 non-target, non-date, non-group columns');
+    if (profile.timeGrain === 'irregular' && dateColumn) warnings.push('Date intervals are irregular; no missing periods were filled');
+    warnings.push('Correlation is descriptive, not evidence of causality; no model was trained');
+    return {
+      target, dimension, dateColumn, scannedRows: profile.rowCount, validRows: valid,
+      excludedTargetRows: profile.rowCount - valid,
+      total: valid ? sum : null, mean: valid ? mean : null,
+      standardDeviation: valid > 1 ? Math.sqrt(m2 / (valid - 1)) : null,
+      min, max, correlations: corrs.slice(0, 12), checkedPredictorColumns: retainedPredictorCount,
+      groups: groupRows, timeline, dateLimited, groupsLimited, warnings,
+      processing: 'On-device descriptive statistics over valid CSV records; bounded memory; no network requests',
+    };
+  }
+  return {consume, finish};
+}
+
+export function analyzeCsvText(text, options, filename = 'dataset.csv') {
+  const analysis = collector(options);
+  const parser = createCsvProfiler(filename, analysis.consume);
+  parser.push(text);
+  return analysis.finish(parser.finish());
+}
+
+export async function analyzeCsvFile(file, options) {
+  const analysis = collector(options);
+  const profile = await scanCsvFile(file, analysis.consume);
+  return analysis.finish(profile);
+}

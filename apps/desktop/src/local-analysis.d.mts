@@ -1,0 +1,31 @@
+export type AnalysisOptions = {
+  target: string;
+  dimension?: string | null;
+  dateColumn?: string | null;
+};
+export type CorrelationRow = {column: string; pairedRows: number; correlation: number};
+export type GroupRow = {label: string; rows: number; sum: number; mean: number};
+export type TimelineRow = {date: string; rows: number; sum: number; mean: number};
+export type LocalAnalysisReport = {
+  target: string;
+  dimension: string | null;
+  dateColumn: string | null;
+  scannedRows: number;
+  validRows: number;
+  excludedTargetRows: number;
+  total: number | null;
+  mean: number | null;
+  standardDeviation: number | null;
+  min: number | null;
+  max: number | null;
+  correlations: CorrelationRow[];
+  checkedPredictorColumns: number;
+  groups: GroupRow[];
+  timeline: TimelineRow[];
+  dateLimited: boolean;
+  groupsLimited: boolean;
+  warnings: string[];
+  processing: string;
+};
+export function analyzeCsvText(text: string, options: AnalysisOptions, filename?: string): LocalAnalysisReport;
+export function analyzeCsvFile(file: File, options: AnalysisOptions): Promise<LocalAnalysisReport>;

@@ -20,7 +20,7 @@ function dateValue(value) {
   return {stamp: actual.getTime(), isMonth: match[3] === undefined};
 }
 
-function createCsvProfiler(filename = 'dataset.csv') {
+export function createCsvProfiler(filename = 'dataset.csv', onValidRow = null) {
   let header = null;
   let stats = [];
   let rowCount = 0;
@@ -69,6 +69,7 @@ function createCsvProfiler(filename = 'dataset.csv') {
       }
       return;
     }
+    if (onValidRow) onValidRow(header, values);
     rowCount++;
     if (preview.length < 5) preview.push(values.map(x => x.slice(0, 160)));
     for (let index = 0; index < values.length; index++) {
@@ -223,10 +224,10 @@ export function profileCsvText(text, filename = 'dataset.csv') {
   return analyzer.finish();
 }
 
-export async function profileCsvFile(file) {
+export async function scanCsvFile(file, onValidRow = null) {
   if (!file?.stream || typeof file.name !== 'string') throw new TypeError('Select a CSV file');
   if (!/\.csv$/i.test(file.name)) throw new Error('Choose a .csv dataset file');
-  const analyzer = createCsvProfiler(file.name);
+  const analyzer = createCsvProfiler(file.name, onValidRow);
   const reader = file.stream().getReader();
   const decoder = new TextDecoder('utf-8', {fatal: true});
   try {
@@ -240,4 +241,8 @@ export async function profileCsvFile(file) {
   } finally {
     reader.releaseLock();
   }
+}
+
+export async function profileCsvFile(file) {
+  return scanCsvFile(file);
 }
