@@ -34,6 +34,16 @@ def _readline(pipe, output: queue.Queue[str]) -> None:
 
 
 def _shutdown(process: subprocess.Popen[str]) -> str:
+    # A Windows PyInstaller onefile backend has both a bootloader parent and a
+    # child process. Terminating just the parent leaves the child holding the
+    # SQLite file, so TemporaryDirectory cleanup then fails with WinError 32.
+    # Only target our own spawned process tree, never any unrelated processes.
+    if sys.platform == "win32" and process.poll() is None:
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            check=False, timeout=15,
+        )
     if process.poll() is None:
         process.terminate()
     try:
