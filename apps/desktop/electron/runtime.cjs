@@ -136,17 +136,29 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
   try {
     const port = await readyPort(child, timeoutMs);
     const baseUrl = `http://127.0.0.1:${port}`;
-    const doRequest = async (route, opts) => {
-      const {method, body} = validateRequest(route, opts);
+    const sendRequest = async (route, {method, body}, requestTimeout = 15000) => {
       const response = await fetchImpl(baseUrl + route, {
         method, body, headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(requestTimeout),
       });
       const length = Number(response.headers.get('content-length'));
       if (Number.isFinite(length) && length > MAX_RESULT_BYTES) throw new Error('BOLT API response too large');
       const raw = await response.text();
       if (Buffer.byteLength(raw, 'utf8') > MAX_RESULT_BYTES) throw new Error('BOLT API response too large');
       return {ok: response.ok, status: response.status, data: raw ? JSON.parse(raw) : null};
+    };
+    const doRequest = async (route, opts) => sendRequest(route, validateRequest(route, opts),
+      route === '/v1/chat' ? 130000 : 15000);
+    const modelRequest = async (route, data) => {
+      const result = await sendRequest(route, {
+        method:data === undefined?'GET':'POST',
+        body:data === undefined?undefined:JSON.stringify(data),
+      }, 130000);
+      if (!result.ok) throw new Error(
+        result.status === 409 ? 'Save a model connection before testing.' :
+        result.status === 422 ? 'Invalid model settings. Check endpoint, authentication and model.' :
+        'Model connection failed. Check endpoint, key and model, then try again.');
+      return result.data;
     };
     let health;
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -158,7 +170,12 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     if (!health?.ok || health.data.mode !== 'synthetic') throw new Error('BOLT API did not respond to authenticated health check');
-    return { port, request: doRequest, stop, child };
+    return { port, request: doRequest, stop, child,
+      modelStatus:() => modelRequest('/_desktop/model'),
+      configureModel:config => modelRequest('/_desktop/model', config),
+      testModel:() => modelRequest('/_desktop/model/test', {}),
+      disconnectModel:() => modelRequest('/_desktop/model/disconnect', {}),
+    };
   } catch (error) {
     stop();
     throw error;

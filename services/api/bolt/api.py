@@ -7,12 +7,15 @@ import re
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .artifacts import ChartBuilder, PPTX_MIME, PresentationBuilder, SVG_MIME
 from .memory import SessionStore
+from .model_provider import LocalModelRuntime, ModelConnectionError, ModelSettings
 from .data import load_fixture
 from .engine import answer
 from .semantic_catalog import catalog_payload
@@ -70,6 +73,7 @@ def create_app(
     artifact_path: Path | None = None,
     query_adapter=None,
     model_gateway=None,
+    local_model_runtime=None,
     identity_resolver=None,
     owner_id: str = "local",
     store=None,
@@ -97,6 +101,7 @@ def create_app(
     presentations = PresentationBuilder(artifact_path)
     charts = ChartBuilder(artifact_path)
     app = FastAPI(title="BOLT AI — Decision Intelligence", version="1.0.0")
+    local_models = (local_model_runtime or LocalModelRuntime()) if access_token is not None and not enterprise else None
 
     if enterprise:
         @app.middleware("http")
@@ -133,6 +138,37 @@ def create_app(
         identity = getattr(request.state, "identity", None)
         return identity.subject if identity is not None else owner_id
 
+    if local_models is not None:
+        @app.exception_handler(RequestValidationError)
+        async def private_model_validation(request: Request, exc: RequestValidationError):
+            if request.url.path.startswith("/_desktop/model"):
+                return JSONResponse(status_code=422, content={"detail": "Invalid model settings"})
+            return await request_validation_exception_handler(request, exc)
+
+        @app.get("/_desktop/model")
+        def model_status():
+            return local_models.status()
+
+        @app.post("/_desktop/model")
+        def configure_model(settings: ModelSettings):
+            try:
+                return local_models.configure(settings)
+            except ValueError:
+                raise HTTPException(422, "Invalid model endpoint, authentication or settings") from None
+
+        @app.post("/_desktop/model/test")
+        def test_model():
+            try:
+                return local_models.test()
+            except LookupError as exc:
+                raise HTTPException(409, str(exc)) from None
+            except ModelConnectionError as exc:
+                raise HTTPException(502, str(exc)) from None
+
+        @app.post("/_desktop/model/disconnect")
+        def disconnect_model():
+            return local_models.disconnect()
+
     @app.get("/health")
     def health(request: Request):
         return {
@@ -140,7 +176,8 @@ def create_app(
             "mode": "enterprise" if enterprise else "synthetic",
             "version": "1.0.0",
             "snowflake_connected": enterprise,
-            "llm_connected": model_gateway is not None,
+            "llm_connected": model_gateway is not None or bool(local_models and local_models.status()["verified"]),
+            "llm_configured": model_gateway is not None or bool(local_models and local_models.status()["configured"]),
             "capabilities": {
                 "governed_queries": True,
                 "bounded_investigations": True,
@@ -260,23 +297,27 @@ def create_app(
             for item in retrieved
         ]
         store.append_turn(req.session_id, "user", req.question)
-        if query_adapter is None:
-            with load_fixture(fixture_path) as connection:
+        gateway = (local_models.gateway() if local_models is not None else None) or model_gateway
+        try:
+            if query_adapter is None:
+                with load_fixture(fixture_path) as connection:
+                    result = answer(
+                        req.question,
+                        memory,
+                        connection,
+                        gateway=gateway,
+                        actor_id=actor_id,
+                    )
+            else:
                 result = answer(
                     req.question,
                     memory,
-                    connection,
-                    gateway=model_gateway,
+                    adapter=query_adapter,
+                    gateway=gateway,
                     actor_id=actor_id,
                 )
-        else:
-            result = answer(
-                req.question,
-                memory,
-                adapter=query_adapter,
-                gateway=model_gateway,
-                actor_id=actor_id,
-            )
+        except ModelConnectionError as exc:
+            raise HTTPException(502, str(exc)) from None
         memory_update = result.pop("memory_update")
         store.append_turn(
             req.session_id,

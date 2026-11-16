@@ -166,7 +166,7 @@ def answer(
             "cost": cost,
             "memory_update": None,
             "limitations": [
-                "The request did not resolve to an approved metric and dimension; no model or query ran."
+                "The request did not resolve to an approved metric and dimension; no query ran."
             ],
         }
 
@@ -210,7 +210,7 @@ def answer(
         "unit": "USD",
     }
     limitations = (
-        ["Demonstration data only; no Snowflake or LLM was queried."]
+        ["Demonstration data only; no Snowflake was queried."]
         if result.is_synthetic
         else ["Observational governed data; this answer does not establish causality."]
     )

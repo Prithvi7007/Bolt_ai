@@ -4,6 +4,7 @@ import {Activity, ArrowUp, BarChart3, Check, ChevronDown, CircleHelp, Clock3, Da
         PanelRightClose, PanelRightOpen, Plus, Search, Settings, Sparkles, Table2,
         TerminalSquare, Zap} from 'lucide-react';
 import DatasetLab from './DatasetLab';
+import ModelSettingsPanel from './ModelSettingsPanel';
 import './sidebar-workspace.css';
 
 type Evidence = {source:string;query_id:string;sql:string;parameters:Record<string,string>;
@@ -14,7 +15,7 @@ type Reply = {status:'ok'|'unsupported'|'no_data';answer:string;evidence:Evidenc
   data:Data|null;chart:Chart|null;cost:{prompt_tokens:number;completion_tokens:number;context_characters:number};limitations:string[]};
 type Turn = {role:'user'|'assistant';body:string;payload:Reply|null;created_at:string};
 type Session = {session_id:string;created_at:string};
-type Health = {mode:'synthetic'|'enterprise';version:string;snowflake_connected:boolean;llm_connected:boolean;
+type Health = {mode:'synthetic'|'enterprise';version:string;snowflake_connected:boolean;llm_connected:boolean;llm_configured?:boolean;
   capabilities:Record<string,boolean>};
 type Metric = {metric_id:string;name:string;description:string;unit:string;dimensions:string[]};
 type Artifact = {artifact_id:string;session_id?:string;filename:string;size_bytes:number;slide_count:number;
@@ -261,7 +262,7 @@ export default function App(){
 
     <div className="main-column">
       <header className="topbar"><div className="crumb"><span>Workspace</span><span className="crumb-sep">/</span><strong>{WORKSPACE_LABELS[workspace]}</strong><ChevronDown size={13}/></div>
-        <div className="top-actions"><span className="chip"><Database size={14}/> {healthInfo?.snowflake_connected?'Governed Snowflake':'Synthetic fixture'}</span><span className="chip"><Activity size={14}/> {healthInfo?.llm_connected?'Approved model':'Deterministic mode'}</span><span className="chip">{sessionTokens} session tokens</span>{workspace==='analyst'&&<button className="icon-button" aria-label={showInspector?'Hide inspector':'Show inspector'} onClick={()=>setShowInspector(!showInspector)}>{showInspector?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>}</div>
+        <div className="top-actions"><span className="chip"><Database size={14}/> {healthInfo?.snowflake_connected?'Governed Snowflake':'Synthetic fixture'}</span><span className="chip"><Activity size={14}/> {healthInfo?.llm_connected?'Model connected':healthInfo?.llm_configured?'Model configured':'Deterministic mode'}</span><span className="chip">{sessionTokens} session tokens</span>{workspace==='analyst'&&<button className="icon-button" aria-label={showInspector?'Hide inspector':'Show inspector'} onClick={()=>setShowInspector(!showInspector)}>{showInspector?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>}</div>
       </header>
 
       <main className="conversation" aria-label="BOLT analyst conversation" style={{display:workspace==='analyst'?undefined:'none'}}>
@@ -322,6 +323,7 @@ export default function App(){
       <section className="feature-workspace" style={{display:workspace==='settings'?'block':'none'}} aria-label="Settings">
         <span className="eyebrow">SETTINGS & MEMORY</span><h1>Preferences and retention controls</h1>
         <div className="settings-grid">
+          <ModelSettingsPanel onChange={()=>{void request<Health>('/health').then(setHealthInfo).catch(()=>setError('Could not refresh model status.'));}}/>
           <article className="governance-card"><strong>Default metric</strong><div className="inline-form"><input value={defaultMetric} onChange={event=>setDefaultMetric(event.target.value)} aria-label="Default metric"/><button onClick={()=>void savePreference()}>Save</button></div><small>Current: {String(preferences.default_metric||'not set')}</small></article>
           <article className="governance-card"><strong>Search scoped memory</strong><div className="inline-form"><input value={memoryQuery} onChange={event=>setMemoryQuery(event.target.value)} aria-label="Search memory"/><button onClick={()=>void searchMemory()}><Search size={14}/> Search</button></div>{memoryResults.map(result=><p key={result.kind+result.reference}><b>{result.kind}</b> · {result.summary}</p>)}</article>
           <article className="danger-card"><strong>Erase my BOLT memory</strong><p>Deletes your sessions, preferences, collections, audit records and artifact files.</p><input value={eraseConfirmation} onChange={event=>setEraseConfirmation(event.target.value)} aria-label="Erasure confirmation" placeholder="ERASE MY BOLT MEMORY"/><button disabled={eraseConfirmation!=='ERASE MY BOLT MEMORY'} onClick={()=>void eraseMemory()}>Erase scoped memory</button></article>

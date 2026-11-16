@@ -36,6 +36,14 @@ python -m http.server 8080 --bind 127.0.0.1
 
 Then open `http://127.0.0.1:8080/apps/desktop/preview.html`.
 
+## Personal model connection
+
+In the desktop app, open **Settings → Model connection**. Enter your OpenAI-compatible base URL and model/deployment name, then choose bearer API key, APIM subscription key, or no authentication for a keyless local endpoint. Save and test the connection. Enter keys in the application, never in source code.
+
+Keys are protected by the operating system when secure storage is available; otherwise the connection lasts only for the current session. A configured model assists Analyst planning against the existing revenue catalog. Questions and bounded context can reach the selected provider; imported CSV rows are not uploaded. Local CSV analysis remains deterministic in this milestone.
+
+See [standalone model connection](docs/standalone-model-connection.md) for scope and verification.
+
 ## Run the actual Electron desktop app
 
 With Node.js 22+ and npm installed, first install the Python service requirements from the repository root (`python -m pip install -r services/api/requirements.txt`), then run:
