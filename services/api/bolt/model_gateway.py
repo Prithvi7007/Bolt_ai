@@ -1,10 +1,11 @@
 """Provider-configurable approved model gateway for structured query plans only."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import re
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .planner import QueryPlan
 
@@ -24,17 +25,35 @@ def bounded_context(memory: dict) -> dict:
 class GatewayConfig:
     endpoint: str
     model: str
-    token: str = ""
+    token: str = field(default="", repr=False)
     timeout_seconds: int = 30
     max_response_bytes: int = 64_000
+    auth_mode: str = "bearer"
+
+
+class NoModelRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(req.full_url, code, "Model redirects are disabled", headers, None)
 
 
 class OpenAICompatibleGateway:
     def __init__(self, config: GatewayConfig, *, transport=None):
+        if any(character.isspace() or ord(character) < 32 for character in config.endpoint):
+            raise ValueError("Invalid model endpoint")
         parsed = urlparse(config.endpoint)
+        if not parsed.hostname or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+            raise ValueError("Model endpoint must not contain credentials, query parameters or fragments")
+        try:
+            parsed.port
+        except ValueError:
+            raise ValueError("Invalid model endpoint port") from None
         loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
         if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
             raise ValueError("Approved model endpoint must use HTTPS")
+        if config.auth_mode not in {"bearer", "apim", "none"}:
+            raise ValueError("Unsupported model authentication")
+        if any(ord(character) < 32 or ord(character) == 127 for character in config.token + config.model):
+            raise ValueError("Invalid model credentials or model name")
         if not config.model.strip():
             raise ValueError("Approved model name is required")
         if config.timeout_seconds < 1 or config.timeout_seconds > 120:
@@ -68,14 +87,16 @@ class OpenAICompatibleGateway:
             ],
         }
         headers = {"Content-Type": "application/json"}
-        if self.config.token:
+        if self.config.token and self.config.auth_mode == "bearer":
             headers["Authorization"] = "Bearer " + self.config.token
+        elif self.config.token and self.config.auth_mode == "apim":
+            headers["Ocp-Apim-Subscription-Key"] = self.config.token
         body = json.dumps(payload).encode("utf-8")
         if self._transport is not None:
             raw = self._transport(self.config.endpoint, body, headers, self.config.timeout_seconds)
         else:
             request = Request(self.config.endpoint.rstrip("/") + "/chat/completions", data=body, headers=headers)
-            with urlopen(request, timeout=self.config.timeout_seconds) as response:
+            with build_opener(NoModelRedirects()).open(request, timeout=self.config.timeout_seconds) as response:
                 raw = response.read(self.config.max_response_bytes + 1)
         if len(raw) > self.config.max_response_bytes:
             raise RuntimeError("Model response exceeded the configured limit")

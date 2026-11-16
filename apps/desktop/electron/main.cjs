@@ -1,6 +1,7 @@
 // BOLT desktop owns its authenticated, loopback-only synthetic Python sidecar.
 // No tokens or arbitrary APIs are exposed to the renderer.
-const {app, BrowserWindow, ipcMain, dialog} = require('electron');
+const {app, BrowserWindow, ipcMain, dialog, safeStorage} = require('electron');
+const {createModelSettings} = require('./model-settings.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const {isAllowedNavigation} = require('./navigation.cjs');
@@ -51,6 +52,21 @@ app.whenReady().then(async () => {
       userData: app.getPath('userData'),
       pythonCommand: process.env.BOLT_PYTHON || undefined,
     }));
+    const modelSettings = createModelSettings({directory:app.getPath('userData'), safeStorage, backend});
+    await modelSettings.restore();
+    ipcMain.handle('bolt:model-settings', async (event, operation, settings) => {
+      const source = event.senderFrame?.url;
+      if (event.senderFrame !== event.sender.mainFrame
+          || !isAllowedNavigation(source, process.env.BOLT_DEV === '1',
+            DEV_URL, path.join(__dirname, '../dist/index.html'))) {
+        throw new Error('Unauthorized BOLT renderer');
+      }
+      if (operation === 'get') return modelSettings.get();
+      if (operation === 'save') return modelSettings.save(settings);
+      if (operation === 'test') return modelSettings.test();
+      if (operation === 'disconnect') return modelSettings.disconnect();
+      throw new Error('Unsupported model operation');
+    });
     ipcMain.handle('bolt:request', async (event, route, options) => {
       // Do not let subframes or an unexpectedly navigated page query local data.
       const source = event.senderFrame?.url;

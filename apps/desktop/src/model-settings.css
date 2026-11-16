@@ -1,0 +1,13 @@
+.model-settings{grid-column:1 / -1}
+.model-settings h2{font-size:1.2rem;margin:0 0 12px}
+.model-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;border:0;padding:0;margin:20px 0}
+.model-fields label{display:block;margin-bottom:8px;font-weight:600}
+.model-fields input,.model-fields select{box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border:1px solid #64748b;border-radius:8px;background:#0f172a;color:#f8fafc;font:inherit}
+.model-fields small{display:block;margin-top:6px;color:#cbd5e1}
+.model-actions{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}
+.model-actions button{min-height:44px;padding:10px 16px;border:1px solid #64748b;border-radius:8px;background:#334155;color:#f8fafc;font:inherit;cursor:pointer}
+.model-actions button:first-child{background:#1d4ed8}
+.model-actions button:disabled,.model-fields :disabled{opacity:.65;cursor:not-allowed}
+.model-settings :is(input,select,button):focus-visible{outline:2px solid #fbbf24;outline-offset:3px}
+.connection-note{color:#cbd5e1;overflow-wrap:anywhere}
+@media(max-width:700px){.model-fields{grid-template-columns:1fr}.model-actions button{flex:1 1 100%}}
