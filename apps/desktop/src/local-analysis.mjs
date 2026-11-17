@@ -11,6 +11,24 @@ const PREDICTOR_LIMIT = 256;
 const GROUP_LIMIT = 16;
 const DATE_LIMIT = 512;
 
+
+export function validateCategoryFilter(input, profile=null) {
+  if(input===null||input===undefined)return null;
+  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).sort().join(',')!=='column,value'
+    ||typeof input.column!=='string'||!input.column.trim()||input.column.length>160
+    ||typeof input.value!=='string'||!input.value.trim()||input.value.length>1000
+    ||JSON.stringify(input.value.trim()).length>1200){
+    throw new Error('Invalid local category filter');
+  }
+  if(profile&&!profile.columns.some(c=>c.name===input.column&&c.type==='categorical')){
+    throw new Error('The filter must use an existing categorical column');
+  }
+  return {column:input.column,value:input.value.trim()};
+}
+export function describeCategoryFilter(filter) {
+  return filter?filter.column+' = '+JSON.stringify(filter.value):'All accepted CSV rows';
+}
+
 function numeric(text) {
   const v = String(text).trim();
   if (NULLS.has(v.toLowerCase()) || !NUMBER.test(v)) return null;
@@ -47,12 +65,14 @@ function collector(options) {
   if (!options || typeof options.target !== 'string' || !options.target.trim()) {
     throw new Error('Approve a numeric target before running analysis');
   }
+  const categoryFilter = validateCategoryFilter(options.categoryFilter);
   const target = options.target;
   const dimension = options.dimension || null;
   const dateColumn = options.dateColumn || null;
   const predictor = options.predictor || null;
   if (target === dimension || target === dateColumn) throw new Error('Target must be separate from date and group columns');
-  let targetIndex = -1, dimensionIndex = -1, dateIndex = -1;
+  let targetIndex = -1, dimensionIndex = -1, dateIndex = -1, filterIndex = -1;
+  let matchedRows = 0, missingness = null;
   let pairs = null;
   let retainedPredictorCount = 0;
   let predictorLimited = false;
@@ -65,6 +85,9 @@ function collector(options) {
   function consume(headers, values) {
     if (!pairs) {
       targetIndex = headers.indexOf(target);
+      filterIndex = categoryFilter ? headers.indexOf(categoryFilter.column) : -1;
+      if(categoryFilter&&filterIndex<0)throw new Error('Filter column is not present in the dataset');
+      if(categoryFilter)missingness = Array(headers.length).fill(0);
       dimensionIndex = dimension === null ? -1 : headers.indexOf(dimension);
       dateIndex = dateColumn === null ? -1 : headers.indexOf(dateColumn);
       if (targetIndex < 0) throw new Error('Target column is not present in the dataset');
@@ -76,6 +99,9 @@ function collector(options) {
       predictorLimited = predictorHeaders.length > PREDICTOR_LIMIT;
       pairs = predictorHeaders.slice(0, PREDICTOR_LIMIT).map(({name, index}) => newPair(name, index));
     }
+    if(categoryFilter&&values[filterIndex].trim()!==categoryFilter.value)return;
+    matchedRows++;
+    if(missingness)values.forEach((value,i)=>{if(NULLS.has(value.trim().toLowerCase()))missingness[i]++;});
     const y = numeric(values[targetIndex]);
     if (y === null) return;
     valid++;
@@ -123,6 +149,7 @@ function collector(options) {
   }
 
   function finish(profile) {
+    validateCategoryFilter(categoryFilter,profile);
     const targetProfile = profile.columns.find(col => col.name === target);
     if (!targetProfile || targetProfile.type !== 'numeric') {
       throw new Error('Approved target must be a consistently numeric column');
@@ -153,7 +180,8 @@ function collector(options) {
 
     const warnings = [];
     if (profile.rejectedRows) warnings.push(profile.rejectedRows + ' malformed CSV records were excluded');
-    if (profile.rowCount - valid) warnings.push((profile.rowCount - valid) + ' valid CSV rows had missing or nonnumeric target values');
+    if(categoryFilter)warnings.push('Local category filter: '+describeCategoryFilter(categoryFilter)+'. '+matchedRows+' of '+profile.rowCount+' accepted rows matched; '+(profile.rowCount-matchedRows)+' rows excluded by the filter.');
+    if (matchedRows - valid) warnings.push((matchedRows - valid) + (categoryFilter?' matching':' accepted')+' CSV rows had missing or nonnumeric target values');
     if (valid < 3) warnings.push('Very few valid target values; interpret patterns cautiously');
     if (valid && min === max) warnings.push('Target has no variation; correlations are undefined');
     const excludedDateRows = dateColumn ? valid - datedTargetRows : 0;
@@ -166,7 +194,9 @@ function collector(options) {
     warnings.push('Correlation is descriptive, not evidence of causality; no model was trained');
     return {
       target, dimension, dateColumn, scannedRows: profile.rowCount, validRows: valid,
-      excludedTargetRows: profile.rowCount - valid,
+      categoryFilter, matchedRows, excludedByFilterRows: profile.rowCount-matchedRows,
+      ...(categoryFilter?{missingness:profile.columns.map((col,i)=>({name:col.name,missing:missingness?.[i]||0}))}:{}),
+      excludedTargetRows: matchedRows - valid,
       total: valid ? sum : null, mean: valid ? mean : null,
       standardDeviation: valid > 1 ? Math.sqrt(m2 / (valid - 1)) : null,
       min, max, correlations: predictor ? corrs.filter(row => row.column === predictor) : corrs.slice(0, 12),

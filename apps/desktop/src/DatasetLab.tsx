@@ -2,6 +2,8 @@ import {useState, type ChangeEvent, type DragEvent} from 'react';
 import {Activity, Check, ChevronRight, Database, FileSpreadsheet, HardDriveDownload,
         Info, RefreshCcw, ShieldCheck, Sparkles, UploadCloud, AlertTriangle} from 'lucide-react';
 import {profileCsvFile, type DatasetProfile} from './dataset-understanding.mjs';
+import CategoryFilter from './CategoryFilter';
+import type {CategoryFilter as Filter} from './local-analysis.mjs';
 import LocalAnalysis from './LocalAnalysis';
 import AskYourData from './AskYourData';
 import './dataset-lab.css';
@@ -13,6 +15,9 @@ function Metric({label, value, detail}: {label: string; value: string; detail: s
 }
 
 export default function DatasetLab() {
+  const [scopeVersion,setScopeVersion]=useState(0);
+  function applyCategoryFilter(filter:Filter|null){setCategoryFilter(filter);setScopeVersion(v=>v+1);}
+  const [categoryFilter,setCategoryFilter]=useState<Filter|null>(null);
   const [profile, setProfile] = useState<DatasetProfile | null>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [selectedTarget, setSelectedTarget] = useState('');
@@ -32,6 +37,7 @@ export default function DatasetLab() {
     setProfile(null);
     setSourceFile(null);
     setApprovedTarget('');
+    setCategoryFilter(null);
     try {
       const result = await profileCsvFile(file);
       setProfile(result);
@@ -85,7 +91,7 @@ export default function DatasetLab() {
       {profile && <>
         <section className="lab-result" aria-label="Dataset understanding results">
           <div className="lab-result-header"><div><span className="lab-overline">DATASET PROFILE</span><h2><Database size={21}/>{profile.fileName}</h2><small>Profiling complete · No model or external API used</small></div>
-            <button className="lab-reset" onClick={() => {setProfile(null); setSourceFile(null); setSelectedTarget(''); setApprovedTarget('');}}><RefreshCcw size={14}/> Clear</button>
+            <button className="lab-reset" onClick={() => {setProfile(null); setSourceFile(null); setSelectedTarget(''); setApprovedTarget('');setCategoryFilter(null);}}><RefreshCcw size={14}/> Clear</button>
           </div>
           <div className="lab-metrics">
             <Metric label="VALID ROWS" value={profile.rowCount.toLocaleString()} detail="Full file scanned"/>
@@ -123,7 +129,7 @@ export default function DatasetLab() {
           <p className="lab-target-description">The target is your outcome variable. BOLT can suggest candidates from numeric columns, but only you can approve the objective. No model is trained by this step.</p>
           <div className="lab-target-control">
             <div><label htmlFor="bolt-target">TARGET VARIABLE</label>
-              <select id="bolt-target" value={selectedTarget} onChange={e => {setSelectedTarget(e.target.value); setApprovedTarget('');}}>
+              <select id="bolt-target" value={selectedTarget} onChange={e => {setSelectedTarget(e.target.value); setApprovedTarget('');setCategoryFilter(null);}}>
                 <option value="">Choose a numeric column</option>
                 {numericColumns.map(col => <option key={col.name} value={col.name}>{col.name}</option>)}
               </select>
@@ -134,9 +140,10 @@ export default function DatasetLab() {
           {approvedTarget && <div className="lab-approved" role="status"><Check size={18}/><div><strong>Target approved: {approvedTarget}</strong><p>The objective is ready. Run local descriptive analysis below. AI question planning is optional and does not upload CSV rows or train a model.</p></div></div>}
         </section>
 
-        {approvedTarget && sourceFile && <LocalAnalysis key={approvedTarget} file={sourceFile} profile={profile} target={approvedTarget}/>}
+        {approvedTarget && sourceFile && <CategoryFilter key={"filter:"+approvedTarget} profile={profile} active={categoryFilter} onApply={applyCategoryFilter}/>}
+        {approvedTarget && sourceFile && <LocalAnalysis key={JSON.stringify([approvedTarget,scopeVersion])} file={sourceFile} profile={profile} target={approvedTarget} categoryFilter={categoryFilter}/>} 
 
-        {approvedTarget && sourceFile && <AskYourData key={"ask:"+approvedTarget} file={sourceFile} profile={profile} target={approvedTarget}/>}
+        {approvedTarget && sourceFile && <AskYourData key={"ask:"+JSON.stringify([approvedTarget,scopeVersion])} file={sourceFile} profile={profile} target={approvedTarget} categoryFilter={categoryFilter}/>}
 
         <section className="lab-panel lab-preview-panel" aria-label="CSV data preview">
           <div className="lab-panel-title"><span>07 / VERIFY</span><h3>Source preview</h3></div>

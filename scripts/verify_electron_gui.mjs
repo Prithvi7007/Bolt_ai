@@ -495,6 +495,66 @@ async function main() {
     ),'Reapproving a target creates fresh question context');
     assert.equal(modelRequests.length,0,'Context resolution and reset make no model calls');
     console.log('PASS: packaged CSV follow-ups retain scope, clear explicitly, clarify without context, and reset on source/target changes');
+    async function replaceLocalSource(csv) {
+      await first.eval('(() => { const input=document.querySelector("#bolt-csv-import"); const d=new DataTransfer(); d.items.add(new File(['+JSON.stringify(csv)+'],"synthetic-lab.csv",{type:"text/csv"})); input.files=d.files; input.dispatchEvent(new Event("change",{bubbles:true})); })()');
+      await eventually(async()=>await first.eval(
+        'document.querySelector("#bolt-target")?.value === "attendance" && !document.querySelector(".lab-ask-composer") && document.querySelector(".lab-target-control button")?.disabled === false'
+      ),'The replacement subset fixture is profiled without prior approval');
+      await first.eval('document.querySelector(".lab-target-control button").click()');
+      await eventually(async()=>await first.eval('!!document.querySelector(".lab-ask-composer")'),'Replacement target is approved');
+    }
+    await replaceLocalSource('month,region,attendance\n2026-01,East,100\n2026-01,East,120\n2026-02,East,130\n2026-01,West,300\n2026-02,West,400\n2026-03,West,500');
+    async function applyEastFilter() {
+      await first.eval('(() => { const s=document.querySelector("#bolt-filter-column"); s.value="region"; s.dispatchEvent(new Event("change",{bubbles:true})); })()');
+      await eventually(async()=>await first.eval('document.querySelector("#bolt-filter-value")?.disabled === false'),'Category value is ready');
+      await first.eval('document.querySelector("#bolt-filter-value").focus()');
+      await first.send('Input.insertText',{text:'East'});
+      await eventually(async()=>await first.eval('document.querySelector(".lab-filter-apply")?.disabled === false'),'Filter is ready to apply');
+      await first.eval('document.querySelector(".lab-filter-apply").click()');
+      await eventually(async()=>await first.eval(
+        'document.querySelector(".lab-filter-scope")?.textContent?.includes("East") && document.querySelectorAll(".lab-ask-turn").length === 0'
+      ),'Applying the category filter resets the previous answer scope');
+    }
+    await applyEastFilter();
+    await first.eval('document.querySelector(".lab-analyze-button").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-analysis-provenance")?.textContent?.includes("3 matching rows / 6 accepted") && document.querySelector(".lab-analysis-kpis")?.textContent?.includes("350")'
+    ),'Local analysis uses the same matching subset and counts source coverage');
+    await askLocal('Total attendance by region');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-ask-table-scroll")?.textContent?.includes("350") && document.querySelector(".lab-ask-turn:last-child .lab-ask-evidence")?.textContent?.includes("3 matching rows / 6 accepted")'
+    ),true,'Subset answers use only East rows');
+    await askLocal('And average?');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-ask-table-scroll")?.textContent?.includes("116.67") && document.querySelector(".lab-ask-turn:last-child .lab-ask-context-resolution")?.textContent?.includes("Mean attendance by region")'
+    ),true,'Follow-up calculations retain the applied subset');
+    if(process.platform==='win32'){
+      const filteredReport=path.join(sandbox,'synthetic-subset.html');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-report").click()');
+      respondToSaveDialog(filteredReport);
+      await eventually(async()=>existsSync(filteredReport)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Analysis report saved."'
+      ),'A filtered report saves through the native dialog');
+      const html=readFileSync(filteredReport,'utf8');
+      assert.ok(html.includes('East')&&html.includes('Local category filter')&&html.includes('3 matching rows / 6 accepted')&&html.includes('116.67'));
+    }
+    await first.eval('document.querySelector(".lab-filter-apply").click()');
+    await eventually(async()=>await first.eval(
+      '!document.querySelector(".lab-ask-context") && !document.querySelector(".lab-analysis-results") && document.querySelectorAll(".lab-ask-turn").length === 0'
+    ),'Reapplying the identical filter resets questions, follow-up context and local analysis');
+    await first.eval('document.querySelector(".lab-filter-clear").click()');
+    await eventually(async()=>await first.eval(
+      '!document.querySelector(".lab-filter-clear") && !document.querySelector(".lab-ask-context") && document.querySelectorAll(".lab-ask-turn").length === 0'
+    ),'Clearing the filter clears results and reusable question context');
+    await askLocal('Total attendance');
+    assert.equal(await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("1,550")'),true,'Clear filter restores the complete source total');
+    await applyEastFilter();
+    await replaceLocalSource('month,attendance\n2026-01,100\n2026-02,120\n2026-03,130');
+    assert.equal(await first.eval(
+      '!document.querySelector(".lab-filter-clear") && document.querySelector(".lab-filter-scope")?.textContent === "All accepted CSV rows"'
+    ),true,'Source replacement clears the active category filter');
+    assert.equal(modelRequests.length,0,'Category matching, calculations and exports do not call the model');
+    console.log('PASS: packaged category filter applies to analysis, answers and follow-ups; saved reports retain scope; clearing/source replacement reset results');
     const configured = await first.eval('window.boltApi.modelSettings("save",'+JSON.stringify({
       endpoint:'http://127.0.0.1:'+modelPort+'/v1',model:'synthetic-planner',auth_mode:'none',token:'',timeout_seconds:10,
     })+')');

@@ -1,3 +1,4 @@
+import type {CategoryFilter} from './local-analysis.mjs';
 import type {DatasetProfile} from './dataset-understanding.mjs';
 export type DataAnswerRow = {label:string; value:string; detail:string};
 export type DataAnswer = {
@@ -26,10 +27,10 @@ export type QuestionPlan = {
 };
 export function planDataQuestion(question:string,profile:DatasetProfile,approvedTarget:string):QuestionPlan;
 export function suggestedDataQuestions(profile:DatasetProfile,target:string):string[];
-export function answerDataQuestion(file:File,question:string,profile:DatasetProfile,approvedTarget:string):Promise<DataAnswer>;
+export function answerDataQuestion(file:File,question:string,profile:DatasetProfile,approvedTarget:string,options?:{categoryFilter?:CategoryFilter|null}):Promise<DataAnswer>;
 
 export function validateDataPlan(plan:unknown,profile:DatasetProfile,approvedTarget:string):QuestionPlan;
-export function answerDataPlan(file:File,plan:QuestionPlan,profile:DatasetProfile,approvedTarget:string):Promise<DataAnswer>;
+export function answerDataPlan(file:File,plan:QuestionPlan,profile:DatasetProfile,approvedTarget:string,options?:{categoryFilter?:CategoryFilter|null}):Promise<DataAnswer>;
 
 export function describeDataPlan(plan:QuestionPlan|null|undefined):string;
 export function resolveDataQuestionPlan(question:string,profile:DatasetProfile,approvedTarget:string,previousPlan?:QuestionPlan|null):{plan:QuestionPlan;contextUsed:boolean};

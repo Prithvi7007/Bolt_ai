@@ -1,5 +1,8 @@
+import type {DatasetProfile} from './dataset-understanding.mjs';
+export type CategoryFilter={column:string;value:string};
 export type AnalysisOptions = {
   target: string;
+  categoryFilter?:CategoryFilter|null;
   dimension?: string | null;
   dateColumn?: string | null;
   predictor?: string | null;
@@ -8,10 +11,14 @@ export type CorrelationRow = {column: string; pairedRows: number; correlation: n
 export type GroupRow = {label: string; isOverflow: boolean; rows: number; sum: number; mean: number};
 export type TimelineRow = {date: string; rows: number; sum: number; mean: number};
 export type LocalAnalysisReport = {
+  categoryFilter:CategoryFilter|null;
   target: string;
   dimension: string | null;
   dateColumn: string | null;
   scannedRows: number;
+  matchedRows:number;
+  excludedByFilterRows:number;
+  missingness?:{name:string;missing:number}[];
   validRows: number;
   excludedTargetRows: number;
   total: number | null;
@@ -33,3 +40,6 @@ export type LocalAnalysisReport = {
 };
 export function analyzeCsvText(text: string, options: AnalysisOptions, filename?: string): LocalAnalysisReport;
 export function analyzeCsvFile(file: File, options: AnalysisOptions): Promise<LocalAnalysisReport>;
+
+export function validateCategoryFilter(input:unknown,profile?:DatasetProfile|null):CategoryFilter|null;
+export function describeCategoryFilter(filter:CategoryFilter|null):string;
