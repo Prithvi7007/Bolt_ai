@@ -5,6 +5,7 @@ export type DataAnswer = {
   title: string;
   answer: string;
   table: DataAnswerRow[];
+  chart?: import('../shared/data-chart.mjs').DataChart;
   calculation: string | null;
   evidence: string | null;
   warnings: string[];

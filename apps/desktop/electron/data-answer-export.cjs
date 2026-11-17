@@ -12,12 +12,12 @@ function text(value, max, nullable = false) {
   if (nullable && value === null) return true;
   return typeof value === 'string' && value.length <= max && (nullable || value.trim().length > 0);
 }
-function validateInput(input, formats = ['html','csv']) {
+function validateInput(input, formats = ['html','csv','svg']) {
   if (!object(input, ['format','sourceName','target','question','interpretation','result'])
       || !formats.includes(input.format)
       || !text(input.sourceName,255) || !text(input.target,160) || !text(input.question,400)
       || !['local','model'].includes(input.interpretation)
-      || !object(input.result,RESULT_KEYS)) invalid();
+      || !object(input.result,input.result?.chart===undefined?RESULT_KEYS:[...RESULT_KEYS,'chart'])) invalid();
   let encoded;
   try { encoded = JSON.stringify(input); } catch { invalid(); }
   if (Buffer.byteLength(encoded,'utf8') > MAX_PAYLOAD_BYTES) invalid();
@@ -66,13 +66,18 @@ function csvDocument(input, created) {
     ['method','Calculation',r.calculation || 'Not available',''],
     ['evidence','Coverage',r.evidence || 'Not available',''],
     ...r.table.map(row => ['table',row.label,row.value,row.detail]),
+    ...(r.chart?[
+      ['chart','Title',r.chart.title,''],['chart','X axis',r.chart.xLabel,''],['chart','Y axis',r.chart.yLabel,''],
+      ['chart','Coverage',r.chart.note,''],
+      ...r.chart.points.map(point=>['chart_value',point.label,String(point.value),point.detail]),
+    ]:[]),
     ...r.warnings.map((warning,index) => ['limitation',String(index+1),warning,'']),
     ['scope','Export scope',SNAPSHOT_NOTE,''],
   ];
   return '\ufeff' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
-function htmlDocument(input, created) {
+function htmlDocument(input, created, chartSvg) {
   const r = input.result;
   const table = r.table.length ? [
     '<section><h2>Calculated table</h2><div class="table-scroll"><table>',
@@ -94,7 +99,7 @@ function htmlDocument(input, created) {
     '.brand{color:#1e40af;font-weight:750;letter-spacing:.12em;font-size:13px}h1{font-size:30px;line-height:1.3;margin:16px 0}h2{font-size:18px;margin:24px 0 10px}',
     'p,li,td,dd{overflow-wrap:anywhere;white-space:pre-wrap}dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 20px;margin:24px 0}dt{font-weight:650}dd{margin:0}',
     '.finding{background:#eff6ff;border-left:4px solid #1e40af;padding:16px 20px;font-size:18px}.muted{color:#475569;font-size:13px}',
-    '.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid #cbd5e1;vertical-align:top}th{background:#f1f5f9;font-size:13px}',
+    'section>svg{display:block;width:100%;height:auto}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid #cbd5e1;vertical-align:top}th{background:#f1f5f9;font-size:13px}',
     'footer{margin-top:30px;border-top:1px solid #cbd5e1;padding-top:14px}',
     '@media(max-width:680px){main{margin:0;padding:22px;border:0;border-radius:0}dl{grid-template-columns:1fr;gap:3px}dd{margin-bottom:9px}}',
     '@media print{body{background:#fff}main{margin:0;border:0;padding:0;max-width:none}.finding{break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid}}',
@@ -103,6 +108,9 @@ function htmlDocument(input, created) {
     '<dl><dt>Source file</dt><dd>' + html(input.sourceName) + '</dd><dt>Approved target</dt><dd>'
       + html(input.target) + '</dd><dt>Question</dt><dd>' + html(input.question) + '</dd></dl>',
     '<section aria-label="Calculated answer"><h2>Finding</h2><p class="finding">' + html(r.answer) + '</p></section>',
+    chartSvg?'<section><h2>Calculated chart</h2>'+chartSvg+'<details><summary>Full chart data</summary><div class="table-scroll"><table><thead><tr><th>Label</th><th>Calculated value</th><th>Evidence</th></tr></thead><tbody>'+
+      r.chart.points.map(point=>'<tr><td>'+html(point.label)+'</td><td>'+html(String(point.value))+'</td><td>'+html(point.detail)+'</td></tr>').join('')+
+      '</tbody></table></div></details></section>':'',
     table,
     '<section><h2>Calculation and evidence</h2><p>' + html(r.calculation || 'Calculation not available')
       + '</p><p>' + html(r.evidence || 'Coverage not available') + '</p><p class="muted">' + method(input) + '</p></section>',
@@ -112,18 +120,30 @@ function htmlDocument(input, created) {
   ].join('');
 }
 
-function createDataAnswerExport(input, createdAt = new Date()) {
+function createDataAnswerExport(input, createdAt = new Date(), chartTools) {
   validateInput(input);
+  let chartSvg='';
+  if(input.result.chart!==undefined){
+    if(typeof chartTools?.validateChart!=='function'||typeof chartTools?.renderChartSvg!=='function')invalid();
+    chartTools.validateChart(input.result.chart);
+    chartSvg=chartTools.renderChartSvg(input.result.chart,{
+      sourceName:input.sourceName,target:input.target,question:input.question,
+      calculation:input.result.calculation,evidence:input.result.evidence,warnings:input.result.warnings,
+    });
+  }
+  if(input.format==='svg'&&!chartSvg)invalid();
   const created = createdAt.toISOString();
   return {
     filename:'BOLT-analysis.' + input.format,
     extension:input.format,
-    content:input.format === 'html' ? htmlDocument(input,created) : csvDocument(input,created),
+    content:input.format === 'html' ? htmlDocument(input,created,chartSvg) : input.format === 'svg' ? chartSvg : csvDocument(input,created),
   };
 }
 
 function validateDataPresentationInput(input) {
-  return validateInput(input, ['pptx']);
+  const value=validateInput(input, ['pptx']);
+  if(Object.hasOwn(value.result,'chart'))invalid();
+  return value;
 }
 
 async function presentationContent(input, createPresentation) {
@@ -147,11 +167,13 @@ async function presentationContent(input, createPresentation) {
 async function saveDataAnswer(input, {showSaveDialog,writeFile,createPresentation}) {
   const pptx = input?.format === 'pptx';
   if (pptx) validateDataPresentationInput(input);
-  const artifact = pptx ? {filename:'BOLT-analysis.pptx',extension:'pptx'} : createDataAnswerExport(input);
+  if(!pptx)validateInput(input);
+  const chartTools=!pptx&&input.result.chart!==undefined?await import('../shared/data-chart.mjs'):undefined;
+  const artifact = pptx ? {filename:'BOLT-analysis.pptx',extension:'pptx'} : createDataAnswerExport(input,new Date(),chartTools);
   const choice = await showSaveDialog({
     title:'Save BOLT analysis',
     defaultPath:artifact.filename,
-    filters:[{name:artifact.extension === 'html' ? 'HTML analysis report' : pptx ? 'Editable PowerPoint' : 'CSV analysis results',
+    filters:[{name:artifact.extension === 'html' ? 'HTML analysis report' : pptx ? 'Editable PowerPoint' : artifact.extension === 'svg' ? 'SVG calculated chart' : 'CSV analysis results',
       extensions:[artifact.extension]}],
   });
   if (choice.canceled) return {saved:false};

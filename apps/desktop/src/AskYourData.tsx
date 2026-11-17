@@ -4,6 +4,7 @@ import {Activity, ArrowUp, CheckCircle2, Database, Download, FileText, Info,
 import {suggestedDataQuestions, type DataAnswer} from './ask-data.mjs';
 import {answerWithAIPlanning} from './ai-data.mjs';
 import type {DatasetProfile} from './dataset-understanding.mjs';
+import DataAnswerChart from './DataAnswerChart';
 import './ask-data.css';
 
 type Turn = {id:number; question:string; answer:DataAnswer};
@@ -37,16 +38,16 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
   const [saving,setSaving]=useState(false);
   const [notice,setNotice]=useState('');
   const [saveError,setSaveError]=useState('');
-  async function save(format:'html'|'csv'|'pptx') {
+  async function save(format:'html'|'csv'|'pptx'|'svg') {
     if(saving||!window.boltApi?.saveDataAnswer)return;
     setSaving(true);setNotice('');setSaveError('');
     const {title,table,calculation,evidence,warnings}=answer;
     try {
       const outcome=await window.boltApi.saveDataAnswer({
         format,sourceName,target,question,interpretation:answer.planning?.mode||'local',
-        result:{title,answer:answer.answer,table,calculation,evidence,warnings},
+        result:{title,answer:answer.answer,table,calculation,evidence,warnings,...(format!=='pptx'&&answer.chart?{chart:answer.chart}:{})},
       });
-      if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':format==='pptx'?'PowerPoint saved.':'Analysis CSV saved.'):'Save cancelled.');
+      if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':format==='pptx'?'PowerPoint saved.':format==='svg'?'Chart saved.':'Analysis CSV saved.'):'Save cancelled.');
     } catch(cause) {
       if(alive.current)setSaveError(cause instanceof Error&&cause.message.includes('HTML or CSV')?
         'PowerPoint export could not be completed. Save as HTML or CSV for this answer, or try again.':
@@ -61,9 +62,10 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
       <button type="button" className="lab-ask-save-report" disabled={saving} onClick={()=>void save('html')}><FileText size={15}/> Save report</button>
       <button type="button" className="lab-ask-save-csv" disabled={saving} onClick={()=>void save('csv')}><Download size={15}/> Export CSV</button>
       <button type="button" className="lab-ask-save-pptx" disabled={saving} onClick={()=>void save('pptx')}><FileText size={15}/> Save PowerPoint</button>
+      {answer.chart&&<button type="button" className="lab-ask-save-chart" disabled={saving} onClick={()=>void save('svg')}><Download size={15}/> Save chart</button>}
       <span className="lab-ask-export-status" role="status">{saving?'Choose where to save…':notice}</span>
     </div>
-    <p>Saves the displayed answer, table, calculation and caveats. Choose an HTML report, CSV results, or editable PowerPoint text slides. Values keep their display formatting.</p>
+    <p>Saves the displayed answer, table, calculation and caveats. Choose an HTML report, CSV results, or editable PowerPoint text slides. PowerPoint keeps the displayed text/table summary. Chart-data CSV rows retain full numeric precision.</p>
     {saveError&&<p role="alert" className="lab-ask-export-error">{saveError}</p>}
   </div>;
 }
@@ -80,6 +82,7 @@ function AnswerCard({answer,question,sourceName,target}: {answer:DataAnswer;ques
       'Local interpretation · no model call'}</p>}
     {answer.planning?.workflow&&<WorkflowCard workflow={answer.planning.workflow}/>}
     <p className="lab-ask-primary">{answer.answer}</p>
+    {answer.chart&&<DataAnswerChart chart={answer.chart}/>}
     {answer.table.length>0 && <div className="lab-ask-table-scroll"><table>
       <thead><tr><th>Value / category</th><th>Calculated result</th><th>Evidence</th></tr></thead>
       <tbody>{answer.table.map((row,index)=><tr key={index}>

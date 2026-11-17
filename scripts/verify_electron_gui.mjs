@@ -373,6 +373,55 @@ async function main() {
       assert.equal(modelRequests.length,0,'Export must not contact the model');
       console.log('PASS: packaged CSV answer exports HTML, CSV and editable PowerPoint through native Save dialogs; cancellation works');
     }
+    await first.eval('document.querySelector(".lab-ask-composer textarea").focus()');
+    await first.send('Input.insertText',{text:'Show the trend of attendance over time'});
+    await eventually(async()=>await first.eval(
+      '!document.querySelector(".lab-ask-composer button")?.disabled'
+    ),'The observed-date question is ready');
+    await first.eval('document.querySelector(".lab-ask-composer button").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelectorAll(".lab-ask-turn:last-child .lab-answer-chart circle").length === 3'
+    ),'Actual CSV date aggregates render as a line chart');
+    const chartTips=await first.eval(
+      '[...document.querySelectorAll(".lab-ask-turn:last-child .lab-answer-chart circle title")].map(x=>x.textContent)'
+    );
+    for(const value of ['100','120','130'])assert.ok(chartTips.some(t=>t.includes(': '+value+' ·')),'Chart uses the actual '+value+' aggregate');
+    await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-answer-chart summary").click()');
+    assert.equal(await first.eval(
+      'document.querySelectorAll(".lab-ask-turn:last-child .lab-chart-table-scroll tbody tr").length'
+    ),3,'The chart exposes all underlying aggregate values');
+    if(process.platform==='win32'){
+      const svgExport=path.join(sandbox,'synthetic-trend.svg');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-chart").click()');
+      respondToSaveDialog(svgExport);
+      await eventually(async()=>existsSync(svgExport)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Chart saved."'
+      ),'SVG chart saves through the native dialog');
+      const svg=readFileSync(svgExport,'utf8');
+      assert.ok(svg.includes('<polyline')&&svg.includes('synthetic-lab.csv')&&svg.includes('3 numeric target rows'));
+      for(const value of ['100','120','130'])assert.ok(svg.includes(': '+value+' ·'),'Saved SVG retains the '+value+' aggregate');
+      assert.equal(/<script|<image|NaN|Infinity/.test(svg),false,'The saved chart has inert finite geometry');
+      const xmlCheck=spawnSync('python',['-c','import sys, xml.etree.ElementTree as ET; root=ET.parse(sys.argv[1]).getroot(); assert root.tag.endswith("}svg")',svgExport],
+        {encoding:'utf8',windowsHide:true,timeout:10000});
+      assert.equal(xmlCheck.status,0,'The saved chart is valid SVG XML');
+      const chartReport=path.join(sandbox,'synthetic-trend.html');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-report").click()');
+      respondToSaveDialog(chartReport);
+      await eventually(async()=>existsSync(chartReport)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Analysis report saved."'
+      ),'The HTML report saves an embedded calculated chart');
+      const chartHtml=readFileSync(chartReport,'utf8');
+      assert.ok(chartHtml.includes('<svg')&&chartHtml.includes('Full chart data')&&chartHtml.includes('130'));
+      const chartTextDeck=path.join(sandbox,'synthetic-trend.pptx');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-pptx").click()');
+      respondToSaveDialog(chartTextDeck);
+      await eventually(async()=>existsSync(chartTextDeck)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "PowerPoint saved."'
+      ),'Charted answers retain their strict text-slide PowerPoint export');
+      assert.equal(readFileSync(chartTextDeck).subarray(0,4).toString('hex'),'504b0304');
+      console.log('PASS: packaged CSV chart uses actual aggregates, exposes full data, saves SVG/HTML, and retains text-slide PowerPoint export');
+    }
+    assert.equal(modelRequests.length,0,'Chart calculation and export must not call the model');
     const configured = await first.eval('window.boltApi.modelSettings("save",'+JSON.stringify({
       endpoint:'http://127.0.0.1:'+modelPort+'/v1',model:'synthetic-planner',auth_mode:'none',token:'',timeout_seconds:10,
     })+')');
