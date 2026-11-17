@@ -11,4 +11,4 @@ Base: merged LangGraph workflow, PR #18 (6ac478789f451949c4f5098a612210db20f8f37
 - No backend, provider, graph, database or automatic persistence participates in export. Exporting an AI-planned answer does not call the model again. Explicitly exported reports remain on disk; the CSV source and app-session answers are otherwise transient.
 - Native Windows GUI verification must save a real synthetic CSV answer through the native dialog and check its content; unit tests cover escaping, spreadsheet formulas, payload limits, cancellation and write failure.
 
-This extends the standalone Ask / Prove workflow without enterprise activation. Editable presentation generation from imported CSV data remains a separate milestone.
+This extends the standalone Ask / Prove workflow without enterprise activation. Editable presentation generation from imported CSV answers is described in [CSV PowerPoint exports](standalone-data-powerpoint.md), which uses the bundled local service for in-memory PPTX generation.

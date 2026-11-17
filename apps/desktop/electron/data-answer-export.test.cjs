@@ -123,3 +123,61 @@ test('full-width spreadsheet formula prefixes are neutralized without changing d
   const content=createDataAnswerExport(payload,instant).content;
   for(const row of payload.result.table)assert.ok(content.includes('"\''+row.label+'"'),row.label);
 });
+
+const pptxBytes=Buffer.concat([Buffer.from([0x50,0x4b,0x03,0x04]),Buffer.alloc(100)]);
+const pptxResponse=()=>({content_base64:pptxBytes.toString('base64'),slide_count:3});
+test('PowerPoint generation receives only the validated snapshot and saves binary bytes',async()=>{
+  const calls=[],writes=[];
+  const payload=input({format:'pptx'});
+  const outcome=await saveDataAnswer(payload,{
+    showSaveDialog:async options=>{assert.equal(options.defaultPath,'BOLT-analysis.pptx');return {canceled:false,filePath:'chosen.pptx'};},
+    createPresentation:async value=>{calls.push(value);return pptxResponse();},
+    writeFile:async(...args)=>writes.push(args),
+  });
+  assert.deepEqual(outcome,{saved:true});
+  assert.deepEqual(calls,[payload]);
+  assert.equal(writes[0][0],'chosen.pptx');
+  assert.deepEqual(writes[0][1],pptxBytes);
+  assert.equal(writes[0][2],undefined,'Binary slides must not be re-encoded as text');
+});
+test('cancelling a PowerPoint save does not generate or write an artifact',async()=>{
+  let generated=0,written=0;
+  assert.deepEqual(await saveDataAnswer(input({format:'pptx'}),{
+    showSaveDialog:async()=>({canceled:true}),
+    createPresentation:async()=>{generated++;return pptxResponse();},
+    writeFile:async()=>{written++;},
+  }),{saved:false});
+  assert.equal(generated,0);assert.equal(written,0);
+});
+test('invalid PowerPoint snapshots cannot open a dialog or reach the local service',async()=>{
+  let calls=0;
+  const deps={showSaveDialog:async()=>{calls++;return {canceled:true};},
+    createPresentation:async()=>{calls++;return pptxResponse();},writeFile:async()=>{calls++;}};
+  await assert.rejects(()=>saveDataAnswer(input({format:'pptx',path:'forbidden'}),deps),/Invalid/);
+  assert.equal(calls,0);
+});
+test('invalid local presentation responses are never written',async()=>{
+  for(const response of [
+    {content_base64:'not-base64',slide_count:3},
+    {content_base64:Buffer.alloc(120).toString('base64'),slide_count:3},
+    {content_base64:pptxBytes.toString('base64'),slide_count:41},
+    {content_base64:pptxBytes.toString('base64')+'!',slide_count:3},
+  ]){
+    let writes=0;
+    await assert.rejects(()=>saveDataAnswer(input({format:'pptx'}),{
+      showSaveDialog:async()=>({canceled:false,filePath:'chosen.pptx'}),
+      createPresentation:async()=>response,writeFile:async()=>{writes++;},
+    }),/Invalid local PowerPoint response/);
+    assert.equal(writes,0);
+  }
+});
+test('PowerPoint generation errors preserve retry and alternative-format guidance',async()=>{
+  let attempts=0;
+  const deps={showSaveDialog:async()=>({canceled:false,filePath:'chosen.pptx'}),
+    createPresentation:async()=>{if(++attempts===1)throw new Error('private backend details');return pptxResponse();},
+    writeFile:async()=>{}};
+  await assert.rejects(()=>saveDataAnswer(input({format:'pptx'}),deps),error=>{
+    assert.match(error.message,/HTML or CSV/);assert.equal(error.message.includes('private'),false);return true;
+  });
+  assert.deepEqual(await saveDataAnswer(input({format:'pptx'}),deps),{saved:true});
+});

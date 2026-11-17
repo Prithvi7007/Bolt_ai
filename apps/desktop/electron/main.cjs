@@ -110,6 +110,10 @@ app.whenReady().then(async () => {
       return saveDataAnswer(input, {
         showSaveDialog: options => dialog.showSaveDialog(owner, options),
         writeFile: fs.promises.writeFile,
+        createPresentation: input => {
+          if (!backend) throw new Error('PowerPoint generation is unavailable');
+          return backend.createDataPresentation(input);
+        },
       });
     });
     ipcMain.handle('bolt:save-artifact', async (event, artifactId, sessionId, filename) => {

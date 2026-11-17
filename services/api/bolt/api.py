@@ -17,6 +17,7 @@ from .artifacts import ChartBuilder, PPTX_MIME, PresentationBuilder, SVG_MIME
 from .memory import SessionStore
 from .model_provider import LocalModelRuntime, ModelConnectionError, ModelSettings
 from .local_data_plans import DataPlanRequest
+from .data_presentations import DataPresentationRequest, build_data_presentation
 from .data_workflow import LocalDataWorkflow, RunReceipt, WorkflowCapacityError, WorkflowConflict, WorkflowNotFound
 from .data import load_fixture
 from .engine import answer
@@ -148,6 +149,13 @@ def create_app(
             if request.url.path.startswith("/_desktop/"):
                 return JSONResponse(status_code=422, content={"detail": "Invalid model settings"})
             return await request_validation_exception_handler(request, exc)
+
+        @app.post("/_desktop/data/presentation")
+        def local_data_presentation(req: DataPresentationRequest):
+            try:
+                return build_data_presentation(req)
+            except ValueError:
+                raise HTTPException(422, "This analysis is too long or contains unsupported text for PowerPoint. Save it as HTML or CSV instead.") from None
 
         @app.post("/_desktop/data/runs")
         def start_data_run(req: DataPlanRequest):

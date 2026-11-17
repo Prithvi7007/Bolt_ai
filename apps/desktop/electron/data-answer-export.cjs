@@ -12,9 +12,9 @@ function text(value, max, nullable = false) {
   if (nullable && value === null) return true;
   return typeof value === 'string' && value.length <= max && (nullable || value.trim().length > 0);
 }
-function validateInput(input) {
+function validateInput(input, formats = ['html','csv']) {
   if (!object(input, ['format','sourceName','target','question','interpretation','result'])
-      || !['html','csv'].includes(input.format)
+      || !formats.includes(input.format)
       || !text(input.sourceName,255) || !text(input.target,160) || !text(input.question,400)
       || !['local','model'].includes(input.interpretation)
       || !object(input.result,RESULT_KEYS)) invalid();
@@ -122,12 +122,36 @@ function createDataAnswerExport(input, createdAt = new Date()) {
   };
 }
 
-async function saveDataAnswer(input, {showSaveDialog,writeFile}) {
-  const artifact = createDataAnswerExport(input);
+function validateDataPresentationInput(input) {
+  return validateInput(input, ['pptx']);
+}
+
+async function presentationContent(input, createPresentation) {
+  if (typeof createPresentation !== 'function') throw new Error('PowerPoint generation is unavailable. Save as HTML or CSV instead.');
+  let result;
+  try { result = await createPresentation(input); }
+  catch { throw new Error('Could not create this PowerPoint. Save as HTML or CSV for long or unsupported text, or try again.'); }
+  const encoded = result?.content_base64;
+  if (typeof encoded !== 'string' || encoded.length > 2_000_000
+      || !Number.isInteger(result.slide_count) || result.slide_count < 3 || result.slide_count > 40) {
+    throw new Error('Invalid local PowerPoint response');
+  }
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.length < 100 || bytes.length > 1_500_000 || bytes.toString('base64') !== encoded
+      || !bytes.subarray(0,4).equals(Buffer.from([0x50,0x4b,0x03,0x04]))) {
+    throw new Error('Invalid local PowerPoint response');
+  }
+  return bytes;
+}
+
+async function saveDataAnswer(input, {showSaveDialog,writeFile,createPresentation}) {
+  const pptx = input?.format === 'pptx';
+  if (pptx) validateDataPresentationInput(input);
+  const artifact = pptx ? {filename:'BOLT-analysis.pptx',extension:'pptx'} : createDataAnswerExport(input);
   const choice = await showSaveDialog({
     title:'Save BOLT analysis',
     defaultPath:artifact.filename,
-    filters:[{name:artifact.extension === 'html' ? 'HTML analysis report' : 'CSV analysis results',
+    filters:[{name:artifact.extension === 'html' ? 'HTML analysis report' : pptx ? 'Editable PowerPoint' : 'CSV analysis results',
       extensions:[artifact.extension]}],
   });
   if (choice.canceled) return {saved:false};
@@ -135,9 +159,10 @@ async function saveDataAnswer(input, {showSaveDialog,writeFile}) {
       || path.extname(choice.filePath).toLowerCase() !== '.' + artifact.extension) {
     throw new Error('Choose a .' + artifact.extension + ' filename for this export.');
   }
-  try { await writeFile(choice.filePath,artifact.content,'utf8'); }
+  const content = pptx ? await presentationContent(input, createPresentation) : artifact.content;
+  try { await writeFile(choice.filePath,content,pptx ? undefined : 'utf8'); }
   catch { throw new Error('Could not save the analysis. Choose a writable folder and try again.'); }
   return {saved:true};
 }
 
-module.exports = {createDataAnswerExport,saveDataAnswer};
+module.exports = {createDataAnswerExport,saveDataAnswer,validateDataPresentationInput};

@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
+const {validateDataPresentationInput} = require('./data-answer-export.cjs');
 
 const MAX_RESULT_BYTES = 2_000_000;
 const SESSION_PATH = /^\/v1\/sessions\/[a-f0-9]{32}\/turns$/;
@@ -213,6 +214,13 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
           method:'POST', body:JSON.stringify(validateDataRunReceipt(input)),
         });
         if (!result.ok) throw new Error('Local workflow confirmation is unavailable. Start a new question if the run expired.');
+        return result.data;
+      },
+      createDataPresentation:async input => {
+        const result = await sendRequest('/_desktop/data/presentation', {
+          method:'POST', body:JSON.stringify(validateDataPresentationInput(input)),
+        });
+        if (!result.ok) throw new Error('PowerPoint generation failed. Save as HTML or CSV instead.');
         return result.data;
       },
       modelStatus:() => modelRequest('/_desktop/model'),

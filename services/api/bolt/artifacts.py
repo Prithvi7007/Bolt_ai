@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
+from io import BytesIO
 from pathlib import Path
 import os
 import math
@@ -225,6 +226,15 @@ def _package_files(slides: list[tuple[str, str]], created: str) -> dict[str, str
             'Target="../slideLayouts/slideLayout1.xml"/></Relationships>'
         )
     return package
+
+
+def presentation_bytes(slides: list[tuple[str, str]], created: str) -> bytes:
+    """Build editable slides in memory for explicit local exports."""
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as deck:
+        for name, xml in _package_files(slides, created).items():
+            deck.writestr(name, xml)
+    return output.getvalue()
 
 
 class PresentationBuilder:

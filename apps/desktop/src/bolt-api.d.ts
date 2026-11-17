@@ -5,7 +5,7 @@ type BoltDataWorkflow = {engine:'langgraph';run_id:string;
 type BoltDataRunReceipt = {run_id:string;status:'completed'|'failed'|'cancelled'};
 type BoltDataPlanResponse = {workflow?:BoltDataWorkflow;plan:import('./ask-data.mjs').QuestionPlan;model:string;
   usage:{prompt_tokens:number;completion_tokens:number;cached_tokens:number}};
-type BoltDataExportInput = {format:'html'|'csv';sourceName:string;target:string;question:string;
+type BoltDataExportInput = {format:'html'|'csv'|'pptx';sourceName:string;target:string;question:string;
   interpretation:'local'|'model';
   result:Pick<import('./ask-data.mjs').DataAnswer,'title'|'answer'|'table'|'calculation'|'evidence'|'warnings'>};
 type BoltModelInput = {endpoint:string;model:string;auth_mode:'bearer'|'apim'|'none';token:string;timeout_seconds:number};

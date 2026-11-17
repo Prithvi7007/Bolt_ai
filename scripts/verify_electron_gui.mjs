@@ -343,13 +343,35 @@ async function main() {
       const reportCsv = readFileSync(csvExport,'utf8');
       assert.ok(reportCsv.includes('"Section","Label","Value","Detail"'));
       assert.ok(reportCsv.includes('350')&&reportCsv.includes('3 numeric target rows'));
-      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-report").click()');
+      const pptxExport = path.join(sandbox,'synthetic-answer.pptx');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-pptx").click()');
+      respondToSaveDialog(pptxExport);
+      await eventually(async()=>existsSync(pptxExport)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent?.includes("PowerPoint saved")'
+      ),'Editable local CSV presentation is saved through the native dialog');
+      const inspectScript = [
+        'import json, sys, zipfile, xml.etree.ElementTree as ET',
+        'with zipfile.ZipFile(sys.argv[1]) as deck:',
+        '    slides = sorted(n for n in deck.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml"))',
+        '    roots = [ET.fromstring(deck.read(n)) for n in slides]',
+        '    text = "".join("".join(root.itertext()) for root in roots)',
+        '    print(json.dumps({"slides":len(slides),"text":text,"editable":all(any(node.tag.endswith("}sp") for node in root.iter()) for root in roots)}))',
+      ].join('\n');
+      const inspected = spawnSync('python',['-c',inspectScript,pptxExport],{encoding:'utf8',windowsHide:true,timeout:10000});
+      assert.equal(inspected.status,0,'The exported PPTX must be a readable Open XML package');
+      const deck = JSON.parse(inspected.stdout);
+      assert.ok(deck.slides>=3&&deck.slides<=40&&deck.editable,'PPTX contains editable text slides');
+      for(const value of ['350','synthetic-lab.csv','3 numeric target rows','Sum of all valid numeric attendance']) {
+        assert.ok(deck.text.includes(value),'PowerPoint retains '+value);
+      }
+      assert.equal(deck.text.includes('Query ID:'),false,'Local slides must not invent query evidence');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-pptx").click()');
       respondToSaveDialog();
       await eventually(async()=>await first.eval(
         'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Save cancelled."'
       ),'Cancelling the native dialog is reported without claiming a save');
       assert.equal(modelRequests.length,0,'Export must not contact the model');
-      console.log('PASS: packaged CSV answer exports HTML and CSV through native Save dialogs; cancellation works');
+      console.log('PASS: packaged CSV answer exports HTML, CSV and editable PowerPoint through native Save dialogs; cancellation works');
     }
     const configured = await first.eval('window.boltApi.modelSettings("save",'+JSON.stringify({
       endpoint:'http://127.0.0.1:'+modelPort+'/v1',model:'synthetic-planner',auth_mode:'none',token:'',timeout_seconds:10,
