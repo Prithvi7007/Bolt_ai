@@ -108,3 +108,114 @@ test('model clarification text cannot invent an uncalculated finding',async()=>{
   assert.equal(answer.evidence,null);
   assert.equal(answer.answer.includes('999999'),false);
 });
+
+const workflowId='a'.repeat(32);
+function workflowState(status='awaiting_local'){
+  const steps=['schema_validated','model_planned','plan_validated','awaiting_local'];
+  if(['completed','failed','cancelled'].includes(status))steps.push('local_'+status,'workflow_finished');
+  return {engine:'langgraph',run_id:workflowId,status,steps,awaiting_local:status==='awaiting_local'};
+}
+const workflowPlan=()=>({plan:{kind:'sum',target},model:'personal',usage:{prompt_tokens:7,completion_tokens:3},workflow:workflowState()});
+
+test('workflow resumes using a status-only receipt after the local calculation',async()=>{
+  const receipts=[],phases=[];
+  const answer=await answerWithAIPlanning(file,question,profile,target,{
+    useModel:true,planData:async()=>workflowPlan(),onPhase:p=>phases.push(p),
+    completeDataRun:async receipt=>{receipts.push(receipt);return {workflow:workflowState(receipt.status)};},
+  });
+  assert.match(answer.answer,/100/);
+  assert.deepEqual(receipts,[{run_id:workflowId,status:'completed'}]);
+  assert.equal(answer.planning.workflow.status,'completed');
+  assert.deepEqual(phases,['planning','calculating','confirming']);
+  assert.equal(JSON.stringify(receipts).includes('PrivateEast'),false);
+});
+test('a stale workflow is cancelled before the old file is scanned',async()=>{
+  let current=true,scans=0;const receipts=[];
+  const oldFile={...file,stream:()=>{scans++;throw new Error('must not scan');}};
+  await assert.rejects(()=>answerWithAIPlanning(oldFile,question,profile,target,{
+    useModel:true,isCurrent:()=>current,planData:async()=>{current=false;return workflowPlan();},
+    completeDataRun:async receipt=>{receipts.push(receipt);return {workflow:workflowState(receipt.status)};},
+  }),/dataset changed/);
+  assert.equal(scans,0);
+  assert.deepEqual(receipts,[{run_id:workflowId,status:'cancelled'}]);
+});
+test('local calculation failure records only a failed receipt',async()=>{
+  const receipts=[];const broken={...file,stream:()=>{throw new Error('private source failure');}};
+  await assert.rejects(()=>answerWithAIPlanning(broken,question,profile,target,{
+    useModel:true,planData:async()=>workflowPlan(),
+    completeDataRun:async receipt=>{receipts.push(receipt);return {workflow:workflowState(receipt.status)};},
+  }),/private source failure/);
+  assert.deepEqual(receipts,[{run_id:workflowId,status:'failed'}]);
+});
+test('lost workflow confirmation retains the actual calculated answer',async()=>{
+  let calls=0;
+  const answer=await answerWithAIPlanning(file,question,profile,target,{
+    useModel:true,planData:async()=>workflowPlan(),
+    completeDataRun:async()=>{calls++;throw new Error('offline');},
+  });
+  assert.match(answer.answer,/100/);
+  assert.equal(answer.planning.workflow.status,'unconfirmed');
+  assert.ok(answer.warnings.some(w=>w.includes('confirmation')));
+  assert.equal(calls,1);
+});
+test('a confirmation for another run never marks the workflow completed',async()=>{
+  const answer=await answerWithAIPlanning(file,question,profile,target,{
+    useModel:true,planData:async()=>workflowPlan(),
+    completeDataRun:async()=>({workflow:{...workflowState('completed'),run_id:'b'.repeat(32)}}),
+  });
+  assert.equal(answer.planning.workflow.status,'unconfirmed');
+  assert.match(answer.answer,/100/);
+});
+test('receipt IPC rejects result values, rows and invalid references',()=>{
+  const {validateDataRunReceipt}=require('../electron/runtime.cjs');
+  assert.deepEqual(validateDataRunReceipt({run_id:workflowId,status:'completed'}),{run_id:workflowId,status:'completed'});
+  for(const extra of [{rows:[['secret']]},{value:100},{filename:'secret.csv'}]){
+    assert.throws(()=>validateDataRunReceipt({run_id:workflowId,status:'completed',...extra}));
+  }
+  assert.throws(()=>validateDataRunReceipt({run_id:'../file',status:'completed'}));
+  assert.throws(()=>validateDataRunReceipt({run_id:workflowId,status:'retry'}));
+  for(const route of ['/_desktop/data/runs','/_desktop/data/complete']){
+    assert.throws(()=>validateRequest(route,{method:'POST',body:'{}'}));
+  }
+});
+
+test('replacing the source during calculation cancels the old workflow',async()=>{
+  let current=true;const receipts=[];
+  const oldSource={...file,stream:()=>{current=false;return new Blob([csv]).stream();}};
+  await assert.rejects(()=>answerWithAIPlanning(oldSource,question,profile,target,{
+    useModel:true,isCurrent:()=>current,planData:async()=>workflowPlan(),
+    completeDataRun:async receipt=>{receipts.push(receipt);return {workflow:workflowState(receipt.status)};},
+  }),/dataset changed/);
+  assert.deepEqual(receipts,[{run_id:workflowId,status:'cancelled'}]);
+});
+test('unsupported graph plans finish without CSV execution or receipts',async()=>{
+  let scans=0,receipts=0;
+  const untouched={...file,stream:()=>{scans++;throw new Error('must not scan');}};
+  const answer=await answerWithAIPlanning(untouched,question,profile,target,{
+    useModel:true,planData:async()=>({
+      plan:{kind:'unsupported',target},workflow:{...workflowState('unsupported'),
+        steps:['schema_validated','model_planned','plan_validated','unsupported','workflow_finished']},
+    }),
+    completeDataRun:async()=>{receipts++;},
+  });
+  assert.equal(answer.kind,'unsupported');
+  assert.equal(answer.planning.workflow.status,'unsupported');
+  assert.equal(scans,0);assert.equal(receipts,0);
+});
+test('invalid planned operations fail the paused workflow without scanning',async()=>{
+  const receipts=[];let scans=0;
+  const untouched={...file,stream:()=>{scans++;throw new Error('must not scan');}};
+  await assert.rejects(()=>answerWithAIPlanning(untouched,question,profile,target,{
+    useModel:true,planData:async()=>({...workflowPlan(),plan:{kind:'sum',target:'spend'}}),
+    completeDataRun:async receipt=>{receipts.push(receipt);return {workflow:workflowState(receipt.status)};},
+  }));
+  assert.equal(scans,0);
+  assert.deepEqual(receipts,[{run_id:workflowId,status:'failed'}]);
+});
+test('missing receipt support never executes a paused local plan',async()=>{
+  let scans=0;const untouched={...file,stream:()=>{scans++;throw new Error('must not scan');}};
+  await assert.rejects(()=>answerWithAIPlanning(untouched,question,profile,target,{
+    useModel:true,planData:async()=>workflowPlan(),
+  }),/Restart the desktop app/);
+  assert.equal(scans,0);
+});

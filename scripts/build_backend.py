@@ -23,6 +23,7 @@ def main() -> None:
     command = [
         sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile',
         '--name', 'bolt-service', '--paths', str(API),
+        '--recursive-copy-metadata', 'langgraph',
         '--add-data', f'{FIXTURE}{":" if sys.platform != "win32" else ";"}fixtures/synthetic',
         '--distpath', str(OUTPUT), '--workpath', str(TEMP / 'work'),
         '--specpath', str(TEMP), str(ENTRY),

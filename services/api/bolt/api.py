@@ -17,6 +17,7 @@ from .artifacts import ChartBuilder, PPTX_MIME, PresentationBuilder, SVG_MIME
 from .memory import SessionStore
 from .model_provider import LocalModelRuntime, ModelConnectionError, ModelSettings
 from .local_data_plans import DataPlanRequest
+from .data_workflow import LocalDataWorkflow, RunReceipt, WorkflowCapacityError, WorkflowConflict, WorkflowNotFound
 from .data import load_fixture
 from .engine import answer
 from .semantic_catalog import catalog_payload
@@ -75,6 +76,7 @@ def create_app(
     query_adapter=None,
     model_gateway=None,
     local_model_runtime=None,
+    local_data_workflow=None,
     identity_resolver=None,
     owner_id: str = "local",
     store=None,
@@ -103,6 +105,7 @@ def create_app(
     charts = ChartBuilder(artifact_path)
     app = FastAPI(title="BOLT AI — Decision Intelligence", version="1.0.0")
     local_models = (local_model_runtime or LocalModelRuntime()) if access_token is not None and not enterprise else None
+    data_workflow = (local_data_workflow or LocalDataWorkflow(local_models)) if local_models is not None else None
 
     if enterprise:
         @app.middleware("http")
@@ -145,6 +148,32 @@ def create_app(
             if request.url.path.startswith("/_desktop/"):
                 return JSONResponse(status_code=422, content={"detail": "Invalid model settings"})
             return await request_validation_exception_handler(request, exc)
+
+        @app.post("/_desktop/data/runs")
+        def start_data_run(req: DataPlanRequest):
+            try:
+                req.validate_schema()
+            except ValueError:
+                raise HTTPException(422, "Invalid CSV planning schema") from None
+            try:
+                return data_workflow.start(req)
+            except WorkflowCapacityError as exc:
+                raise HTTPException(429, str(exc)) from None
+            except WorkflowConflict as exc:
+                raise HTTPException(409, str(exc)) from None
+            except ModelConnectionError as exc:
+                raise HTTPException(502, str(exc)) from None
+
+        @app.post("/_desktop/data/complete")
+        def complete_data_run(req: RunReceipt):
+            try:
+                return data_workflow.complete(req)
+            except WorkflowNotFound as exc:
+                raise HTTPException(404, str(exc)) from None
+            except WorkflowConflict as exc:
+                raise HTTPException(409, str(exc)) from None
+            except ModelConnectionError as exc:
+                raise HTTPException(502, str(exc)) from None
 
         @app.post("/_desktop/data/plan")
         def plan_local_data(req: DataPlanRequest):

@@ -297,7 +297,10 @@ async function main() {
     await eventually(async()=>await first.eval(
       'document.querySelector(".lab-ask-turn:last-child .lab-ask-planning")?.textContent?.includes("AI interpretation: sum") && document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("350")'
     ),'AI schema interpretation computes the real local CSV total');
-    assert.equal(modelRequests.length,1,'Unfamiliar question makes one model planning call');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-data-workflow-status")?.textContent?.includes("LangGraph") && document.querySelector(".lab-ask-turn:last-child .lab-data-workflow-status strong")?.textContent === "Completed"'
+    ),'Packaged LangGraph pauses for local calculation and resumes to completion');
+    assert.equal(modelRequests.length,1,'Graph resume must not repeat the model planning call');
     assert.deepEqual(Object.keys(modelRequests[0]).sort(),['columns','question','target']);
     assert.deepEqual(modelRequests[0].columns,[{name:'month',type:'date'},{name:'attendance',type:'numeric'}]);
     const transmitted = JSON.stringify(modelRequests[0]);
@@ -305,7 +308,7 @@ async function main() {
       assert.equal(transmitted.includes(value),false,'CSV source values must not reach the model');
     }
     await first.eval('window.boltApi.modelSettings("disconnect")');
-    console.log('PASS: packaged CSV AI planning shares schema only and calculates the actual local total');
+    console.log('PASS: packaged LangGraph pause/resume uses one schema-only model call and computes the actual local total');
     await first.eval(
       '([...document.querySelectorAll("button.workspace-button")].find(x => x.textContent.includes("Analyst")))?.click()'
     );

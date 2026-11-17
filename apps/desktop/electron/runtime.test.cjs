@@ -131,3 +131,32 @@ test('IPC validates memory, collection, data source, chart, and settings routes'
     method:'POST',body:JSON.stringify({key:'x',value:'y',admin:true})
   }),/Invalid/);
 });
+
+
+test('workflow transport uses private routes and status-only receipts', async () => {
+  const {startBackend} = require('./runtime.cjs');
+  const fake = new EventEmitter();
+  fake.stdout = new PassThrough();fake.stderr = new PassThrough();
+  fake.exitCode = null;fake.signalCode = null;fake.kill = () => {};
+  const requests = [];
+  const backend = await startBackend({command:'fake-python',args:[],cwd:process.cwd(),bundled:false}, {
+    spawnProcess: () => {queueMicrotask(()=>fake.stdout.write('BOLT_READY 45678\n'));return fake;},
+    fetchImpl: async (url,options) => {
+      requests.push({url,options});
+      return {ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify({mode:'synthetic'})};
+    },
+  });
+  try {
+    const schema={question:'A quick snapshot',target:'income',columns:[{name:'income',type:'numeric'}]};
+    await backend.planData(schema);
+    await backend.completeDataRun({run_id:id,status:'completed'});
+    assert.equal(requests[1].url,'http://127.0.0.1:45678/_desktop/data/runs');
+    assert.deepEqual(JSON.parse(requests[1].options.body),schema);
+    assert.equal(requests[2].url,'http://127.0.0.1:45678/_desktop/data/complete');
+    assert.deepEqual(JSON.parse(requests[2].options.body),{run_id:id,status:'completed'});
+    assert.equal(requests[2].options.headers.Authorization.length,71);
+    await assert.rejects(()=>backend.completeDataRun({run_id:id,status:'completed',rows:[['secret']]}),/Invalid/);
+    await assert.rejects(()=>backend.planData({...schema,filename:'secret.csv'}),/Invalid/);
+    assert.equal(requests.length,3,'Rejected fields must not reach the local service');
+  } finally {backend.stop();}
+});
