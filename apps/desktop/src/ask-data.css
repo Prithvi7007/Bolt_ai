@@ -66,3 +66,17 @@
 .lab-ask-exports>p,.lab-ask-export-status{color:#ADC3DF;font-size:11px;line-height:1.6}
 .lab-ask-exports>p{margin:8px 0 0}
 .lab-ask-exports .lab-ask-export-error{color:#FECACA}
+
+.lab-answer-chart{margin:16px 0;padding:16px;background:#0F1F35;border:1px solid #36506C;border-radius:10px;min-width:0}
+.lab-answer-chart figcaption{display:flex;flex-direction:column;gap:5px;margin-bottom:10px;overflow-wrap:anywhere}
+.lab-answer-chart figcaption strong{color:#E5EFFE;font-size:12px}
+.lab-answer-chart figcaption span,.lab-answer-chart p{color:#ADC3DF;font-size:11px;line-height:1.6}
+.lab-answer-chart svg{display:block;width:100%;height:auto}
+.lab-answer-chart details{margin-top:10px;color:#C3D6EE;font-size:11px}
+.lab-answer-chart summary{cursor:pointer;min-height:36px;align-content:center}
+.lab-answer-chart summary:focus-visible,.lab-chart-table-scroll:focus-visible{outline:2px solid #FBBF24;outline-offset:3px}
+.lab-chart-table-scroll{max-height:280px;overflow:auto;margin-top:10px}
+.lab-chart-table-scroll table{border-collapse:collapse;width:100%;min-width:420px;text-align:left;font-size:11px}
+.lab-chart-table-scroll th,.lab-chart-table-scroll td{padding:9px 10px;border-bottom:1px solid #30445F;overflow-wrap:anywhere}
+.lab-chart-table-scroll th{color:#BCD0EB;background:#15273E}
+.lab-chart-table-scroll td{color:#D9E7F8;font-variant-numeric:tabular-nums}

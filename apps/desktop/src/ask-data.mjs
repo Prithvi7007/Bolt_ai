@@ -6,6 +6,7 @@
  * an explicitly approved numeric target and a bounded streaming CSV pass.
  */
 import {analyzeCsvFile} from './local-analysis.mjs';
+import {validateChart} from '../shared/data-chart.mjs';
 
 const MAX_QUESTION_LENGTH = 400;
 const UNSUPPORTED_SCOPE = /\b(?:where|filter(?:ed)?|only rows|excluding|except|before|after|since|until|between \d{4}|last \d+|next \d+|previous \d+|in \d{4}|during \d{4}|for \d{4}|from \d{4}|greater than|less than|at least|more than \d+)\b/i;
@@ -213,6 +214,11 @@ export function validateDataPlan(input, profile, approvedTarget) {
   return plan;
 }
 
+function attachChart(answer,chart) {
+  try {validateChart(chart);return {...answer,chart};}
+  catch {return {...answer,warnings:[...answer.warnings,'A chart could not be generated from these aggregate values. Use the calculation table.']};}
+}
+
 export async function answerDataPlan(file, inputPlan, profile, approvedTarget) {
   if (inputPlan.kind === 'unsupported') return unsupported(inputPlan.error || inputPlan.reason || 'Please rephrase the question.');
   const plan = validateDataPlan(inputPlan,profile,approvedTarget);
@@ -269,10 +275,16 @@ export async function answerDataPlan(file, inputPlan, profile, approvedTarget) {
           +' observed '+aggregateLabel+' '+approvedTarget+': '+datum(leader[plan.aggregation])+'.' : 'No individual groups were available.')
         : 'Calculated '+aggregateLabel+' '+approvedTarget+' for '+fmt(report.groups.length)+' observed group categories in '+plan.dimension+'.';
       if (report.groupsLimited) answer += ' More than 16 groups exist; results are partial, so the ranking is not guaranteed to be global.';
-      return result(plan.kind,aggregateLabel+' '+approvedTarget+' by '+plan.dimension,
+      return attachChart(result(plan.kind,aggregateLabel+' '+approvedTarget+' by '+plan.dimension,
         answer, (plan.aggregation==='mean'?'Sum ÷ valid target observations':'Sum of valid target observations')
         +' grouped by '+plan.dimension,report,table,
-        report.groupsLimited ? ['Only the first 16 encountered groups are represented individually. Do not interpret the result as a complete top/bottom ranking.'] : []);
+        report.groupsLimited ? ['Only the first 16 encountered groups are represented individually. Do not interpret the result as a complete top/bottom ranking.'] : []),{
+          type:'bar',title:aggregateLabel+' '+approvedTarget+' by '+plan.dimension,
+          xLabel:aggregateLabel+' '+approvedTarget,yLabel:plan.dimension,
+          points:rows.map(g=>({label:g.label,value:g[plan.aggregation],detail:fmt(g.rows)+' target rows'})),
+          note:'Showing '+rows.length+' of '+groups.length+' retained individual categories.'+
+            (report.groupsLimited?' More categories exist; this is a partial comparison and rankings are not guaranteed global.':''),
+        });
     }
     case 'timeline': {
       if (!report.timeline.length) return result(plan.kind,'No valid date observations',
@@ -287,10 +299,16 @@ export async function answerDataPlan(file, inputPlan, profile, approvedTarget) {
       let sentence=unit+' '+approvedTarget+' was '+datum(a)+' on '+first.date
         +' and '+datum(b)+' on '+last.date+'. '+change;
       if (report.dateLimited) sentence+=' Dates were capped at 512 encountered distinct periods; this is an incomplete series.';
-      return result(plan.kind,approvedTarget+' across observed dates',
+      return attachChart(result(plan.kind,approvedTarget+' across observed dates',
         sentence,'Group valid target values by parsed ISO date, then '+(plan.aggregation==='mean'?'calculate mean':'sum')+' by date',
         report,values.slice(0,12).map(v=>({label:v.date,value:datum(v[plan.aggregation]),detail:fmt(v.rows)+' target rows'})),
-        ['First and last observed date buckets are not necessarily consecutive. No dates are imputed, and this is not a forecast.']);
+        ['First and last observed date buckets are not necessarily consecutive. No dates are imputed, and this is not a forecast.']),{
+          type:'line',title:unit+' '+approvedTarget+' across observed dates',
+          xLabel:plan.dateColumn,yLabel:unit+' '+approvedTarget,
+          points:values.map(v=>({label:v.date,value:v[plan.aggregation],detail:fmt(v.rows)+' target rows'})),
+          note:'All '+values.length+' retained observed date buckets are shown at equal spacing; elapsed gaps may differ. No dates are imputed.'+
+            (report.dateLimited?' Additional date buckets were omitted at the 512-bucket limit.':''),
+        });
     }
     case 'correlation': {
       const match=plan.predictor

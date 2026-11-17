@@ -50,6 +50,12 @@ After calculating an answer in Data Lab, choose **Save report** for a self-conta
 
 Export generation stays on-device and does not call the model. PowerPoint is built in memory by the bundled Python service; HTML and CSV are generated in Electron main. Saved reports remain on disk, while the imported CSV and unsaved Data Lab answers remain app-session data. See [local analysis exports](docs/standalone-data-exports.md), [CSV PowerPoint export](docs/standalone-data-powerpoint.md), and [LangGraph workflow](docs/standalone-langgraph-workflow.md).
 
+## Charts from CSV answers
+
+Grouped totals and means show bar charts; observed date-series answers show line charts using locally calculated aggregates. Open **View chart data** to inspect all plotted values, including retained date buckets beyond the answer table preview. Date buckets use equal horizontal spacing, so the chart note discloses that elapsed gaps may differ. Existing limits and coverage caveats remain visible.
+
+Choose **Save chart** for a standalone SVG with source and calculation evidence. HTML reports embed the chart and full chart-data table; CSV exports add chart rows at full numeric precision. PowerPoint continues to export editable text slides of the displayed answer/table. Chart generation and export make no additional model or graph call. See [CSV answer charts](docs/standalone-data-charts.md).
+
 ## Run the actual Electron desktop app
 
 With Node.js 22+ and npm installed, first install the Python service requirements from the repository root (`python -m pip install -r services/api/requirements.txt`), then run:
