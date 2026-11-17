@@ -32,7 +32,9 @@ def _safe_filename(title: str) -> str:
 
 
 def _text_shape(shape_id: int, name: str, x: int, y: int, cx: int, cy: int,
-                text: str, size: int, bold: bool = False) -> str:
+                text: str, size: int, bold: bool = False, *, text_inset: int | None = None) -> str:
+    insets = (f' lIns="{text_inset}" tIns="{text_inset}" rIns="{text_inset}" bIns="{text_inset}"'
+              if text_inset is not None else '')
     paragraphs = []
     for line in (text.splitlines() or [""]):
         paragraphs.append(
@@ -46,12 +48,12 @@ def _text_shape(shape_id: int, name: str, x: int, y: int, cx: int, cy: int,
         '<a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
         '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
         '<a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>'
-        '<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>%s</p:txBody></p:sp>'
+        f'<p:txBody><a:bodyPr wrap="square"{insets}/><a:lstStyle/>%s</p:txBody></p:sp>'
         % (shape_id, escape(name), x, y, cx, cy, "".join(paragraphs))
     )
 
 
-def _slide_xml(title: str, body: str) -> str:
+def _slide_xml(title: str, body: str, shapes: str | None = None) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
@@ -62,7 +64,7 @@ def _slide_xml(title: str, body: str) -> str:
         '<a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
         '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
         + _text_shape(2, "Title", 609600, 381000, 10972800, 914400, title, 2800, True)
-        + _text_shape(3, "Body", 609600, 1524000, 10972800, 4572000, body, 1500, False)
+        + (shapes if shapes is not None else _text_shape(3, "Body", 609600, 1524000, 10972800, 4572000, body, 1500, False))
         + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>'
     )
 
@@ -82,7 +84,8 @@ def _source_lines(analyses: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _package_files(slides: list[tuple[str, str]], created: str) -> dict[str, str]:
+def _package_files(slides: list[tuple[str, str]], created: str,
+                   slide_shapes: dict[int, str] | None = None) -> dict[str, str]:
     overrides = "".join(
         f'<Override PartName="/ppt/slides/slide{i}.xml" '
         'ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
@@ -229,7 +232,7 @@ def _package_files(slides: list[tuple[str, str]], created: str) -> dict[str, str
         "ppt/theme/theme1.xml": theme,
     }
     for index, (title, body) in enumerate(slides, 1):
-        package[f"ppt/slides/slide{index}.xml"] = _slide_xml(title, body)
+        package[f"ppt/slides/slide{index}.xml"] = _slide_xml(title, body, (slide_shapes or {}).get(index))
         package[f"ppt/slides/_rels/slide{index}.xml.rels"] = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
@@ -239,11 +242,12 @@ def _package_files(slides: list[tuple[str, str]], created: str) -> dict[str, str
     return package
 
 
-def presentation_bytes(slides: list[tuple[str, str]], created: str) -> bytes:
-    """Build editable slides in memory for explicit local exports."""
+def presentation_bytes(slides: list[tuple[str, str]], created: str, *,
+                       slide_shapes: dict[int, str] | None = None) -> bytes:
+    """Build editable slides in memory; optional shapes are trusted, internally generated XML."""
     output = BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as deck:
-        for name, xml in _package_files(slides, created).items():
+        for name, xml in _package_files(slides, created, slide_shapes).items():
             deck.writestr(name, xml)
     return output.getvalue()
 

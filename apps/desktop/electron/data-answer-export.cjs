@@ -141,9 +141,7 @@ function createDataAnswerExport(input, createdAt = new Date(), chartTools) {
 }
 
 function validateDataPresentationInput(input) {
-  const value=validateInput(input, ['pptx']);
-  if(Object.hasOwn(value.result,'chart'))invalid();
-  return value;
+  return validateInput(input, ['pptx']);
 }
 
 async function presentationContent(input, createPresentation) {
@@ -168,7 +166,8 @@ async function saveDataAnswer(input, {showSaveDialog,writeFile,createPresentatio
   const pptx = input?.format === 'pptx';
   if (pptx) validateDataPresentationInput(input);
   if(!pptx)validateInput(input);
-  const chartTools=!pptx&&input.result.chart!==undefined?await import('../shared/data-chart.mjs'):undefined;
+  const chartTools=input.result.chart!==undefined?await import('../shared/data-chart.mjs'):undefined;
+  if(pptx&&chartTools)chartTools.validateChart(input.result.chart);
   const artifact = pptx ? {filename:'BOLT-analysis.pptx',extension:'pptx'} : createDataAnswerExport(input,new Date(),chartTools);
   const choice = await showSaveDialog({
     title:'Save BOLT analysis',

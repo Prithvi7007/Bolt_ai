@@ -46,7 +46,7 @@ See [standalone model connection](docs/standalone-model-connection.md) for scope
 
 ## Save Data Lab analyses
 
-After calculating an answer in Data Lab, choose **Save report** for a self-contained, printable HTML report, **Export CSV** for analysis results, or **Save PowerPoint** for editable text slides. A native Save dialog lets you choose the destination each time. All formats include the question, source filename, approved target, displayed answer/table, calculation evidence and caveats. CSV values retain their display formatting; exports contain the displayed analysis rather than the source rows.
+After calculating an answer in Data Lab, choose **Save report** for a self-contained, printable HTML report, **Export CSV** for analysis results, or **Save PowerPoint** for editable text and chart shapes. A native Save dialog lets you choose the destination each time. All formats include the question, source filename, approved target, displayed answer/table, calculation evidence and caveats. CSV values retain their display formatting; exports contain the displayed analysis rather than the source rows.
 
 Export generation stays on-device and does not call the model. PowerPoint is built in memory by the bundled Python service; HTML and CSV are generated in Electron main. Saved reports remain on disk, while the imported CSV and unsaved Data Lab answers remain app-session data. See [local analysis exports](docs/standalone-data-exports.md), [CSV PowerPoint export](docs/standalone-data-powerpoint.md), and [LangGraph workflow](docs/standalone-langgraph-workflow.md).
 
@@ -54,7 +54,7 @@ Export generation stays on-device and does not call the model. PowerPoint is bui
 
 Grouped totals and means show bar charts; observed date-series answers show line charts using locally calculated aggregates. Open **View chart data** to inspect all plotted values, including retained date buckets beyond the answer table preview. Date buckets use equal horizontal spacing, so the chart note discloses that elapsed gaps may differ. Existing limits and coverage caveats remain visible.
 
-Choose **Save chart** for a standalone SVG with source and calculation evidence. HTML reports embed the chart and full chart-data table; CSV exports add chart rows at full numeric precision. PowerPoint continues to export editable text slides of the displayed answer/table. Chart generation and export make no additional model or graph call. See [CSV answer charts](docs/standalone-data-charts.md).
+Choose **Save chart** for a standalone SVG with source and calculation evidence. HTML reports embed the chart and full chart-data table; CSV exports add chart rows at full numeric precision. PowerPoint includes editable chart shapes, the displayed answer/table, and a paginated appendix of all plotted values. Chart shapes can be edited individually; they are not embedded Excel charts. Chart generation and export make no additional model or graph call. See [CSV answer charts](docs/standalone-data-charts.md) and [PowerPoint chart exports](docs/standalone-data-powerpoint-charts.md).
 
 ## Follow up within a CSV calculation
 

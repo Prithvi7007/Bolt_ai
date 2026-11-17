@@ -2,6 +2,8 @@
 
 Base: PR #19, merged at f8ad23ccaf1ba55205674dd5154920a8ae97c53a.
 
+Charted snapshots are extended by [PowerPoint chart exports](standalone-data-powerpoint-charts.md): the current app includes editable chart shapes and a full-value appendix. The text-only contract below records the original milestone.
+
 ## Contract
 
 - A calculated Data Lab answer offers Save PowerPoint alongside HTML and CSV. The exported PPTX contains editable text: finding, original question, displayed table, formula, row evidence, source filename, target, interpretation method and all caveats. It does not invent commentary, numeric results, SQL or query IDs.

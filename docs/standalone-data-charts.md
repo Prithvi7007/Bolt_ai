@@ -2,6 +2,8 @@
 
 Base: PR #20, merged at 00a09e8605eb9cacb315af286dcbf16cf776c507.
 
+PowerPoint support is extended by [PowerPoint chart exports](standalone-data-powerpoint-charts.md). The text-only PowerPoint clause below records the original chart milestone.
+
 ## Contract
 
 - Categorical totals/means and observed date-series answers include charts built from the same local calculation, using numeric aggregates directly rather than parsing formatted answer text. Scalar/unsupported answers remain text/table results.

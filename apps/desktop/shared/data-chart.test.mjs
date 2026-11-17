@@ -108,7 +108,8 @@ test('native chart save validates before its dialog and cancellation never write
   await assert.rejects(()=>saveDataAnswer({...payload(chart([NaN])),format:'svg'},deps));
   assert.equal(dialogs,1);
   assert.throws(()=>createDataAnswerExport({...payload(undefined),format:'svg'}));
-  assert.throws(()=>validateDataPresentationInput({...payload(chart([1])),format:'pptx'}));
+  assert.deepEqual(await saveDataAnswer({...payload(chart([1])),format:'pptx'},deps),{saved:false});
+  assert.equal(dialogs,2);assert.equal(writes,0);assert.equal(backend,0);
 });
 test('SVG saving writes generated XML only to the dialog-selected destination',async()=>{
   const writes=[];
@@ -134,6 +135,8 @@ test('an overflowing aggregate omits the chart instead of showing a fabricated p
   assert.equal(answer.chart,undefined);
   assert.ok(answer.warnings.some(w=>w.includes('chart could not')));
 });
-test('chart data cannot enter the strict PowerPoint snapshot',()=>{
-  assert.throws(()=>validateDataPresentationInput({...payload(chart([1])),format:'pptx'}),/Invalid/);
+test('calculated chart metadata can enter the bounded PowerPoint snapshot',()=>{
+  const input={...payload(chart([1])),format:'pptx'};
+  assert.deepEqual(validateDataPresentationInput(input),input);
+  assert.throws(()=>validateDataPresentationInput({...input,svg:'<svg/>'}),/Invalid/);
 });

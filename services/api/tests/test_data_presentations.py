@@ -108,7 +108,8 @@ def test_request_rejects_unknown_fields_raw_rows_and_invalid_text(mutation):
         DataPresentationRequest.model_validate(data)
 
 
-def test_private_desktop_export_does_not_persist_or_call_a_model(tmp_path):
+@pytest.mark.parametrize("charted", [False, True])
+def test_private_desktop_export_does_not_persist_or_call_a_model(tmp_path, charted):
     class NoModel:
         def __getattr__(self, name):
             raise AssertionError("Presentation export must not use a model")
@@ -116,21 +117,22 @@ def test_private_desktop_export_does_not_persist_or_call_a_model(tmp_path):
     app = create_app(tmp_path/"desktop.db", FIXTURE, access_token=TOKEN,
                      artifact_path=artifact_dir, local_model_runtime=NoModel())
     client = TestClient(app, headers={"Authorization":"Bearer "+TOKEN})
-    response = client.post("/_desktop/data/presentation", json=SNAPSHOT)
+    snapshot = chart_snapshot() if charted else SNAPSHOT
+    response = client.post("/_desktop/data/presentation", json=snapshot)
     assert response.status_code == 200
     assert base64.b64decode(response.json()["content_base64"]).startswith(b"PK\x03\x04")
     assert client.get("/v1/sessions").json() == {"sessions":[]}
     assert list(artifact_dir.iterdir()) == []
     invalid = client.post("/_desktop/data/presentation", json={**SNAPSHOT,"rows":[["private-row"]]})
     assert invalid.status_code == 422 and "private-row" not in invalid.text
-    assert client.post("/_desktop/data/presentation", json=SNAPSHOT,
+    assert client.post("/_desktop/data/presentation", json=snapshot,
                        headers={"Authorization":""}).status_code == 401
     browser = TestClient(create_app(tmp_path/"browser.db", FIXTURE))
-    assert browser.post("/_desktop/data/presentation", json=SNAPSHOT).status_code == 404
+    assert browser.post("/_desktop/data/presentation", json=snapshot).status_code == 404
     identity = SimpleNamespace(resolve=lambda request: SimpleNamespace(subject="test"))
     enterprise = TestClient(create_app(tmp_path/"enterprise.db", FIXTURE,
                             query_adapter=object(), identity_resolver=identity))
-    assert enterprise.post("/_desktop/data/presentation", json=SNAPSHOT).status_code == 404
+    assert enterprise.post("/_desktop/data/presentation", json=snapshot).status_code == 404
 
 
 @pytest.mark.parametrize("separator", ["\u0085", "\u2028", "\u2029"])
@@ -173,3 +175,134 @@ def test_powerpoint_theme_and_layout_have_required_open_xml_structure(kind, tmp_
     master = ET.fromstring(archive.read("ppt/slideMasters/slideMaster1.xml"))
     for layout in master.findall("p:sldLayoutIdLst/p:sldLayoutId", namespaces):
         assert 2147483648 <= int(layout.attrib["id"]) <= 4294967295
+
+CHART = {
+    "type": "bar", "title": "Total attendance by region", "xLabel": "region",
+    "yLabel": "total attendance", "note": "All retained category aggregates.",
+    "points": [
+        {"label": "East <&>", "value": -12.5, "detail": "2 target rows"},
+        {"label": "West", "value": 28.25, "detail": "3 target rows"},
+        {"label": "Zero", "value": 0, "detail": "1 target row"},
+    ],
+}
+NS = {"p": "http://schemas.openxmlformats.org/presentationml/2006/main",
+      "a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+
+
+def chart_snapshot(chart=None):
+    data = deepcopy(SNAPSHOT)
+    data["result"]["chart"] = deepcopy(CHART if chart is None else chart)
+    return data
+
+
+def chart_shapes(archive):
+    roots = [ET.fromstring(archive.read(name)) for name in archive.namelist()
+             if name.startswith("ppt/slides/slide") and name.endswith(".xml")]
+    return [shape for root in roots for shape in root.findall(".//p:sp", NS)
+            if shape.find("p:nvSpPr/p:cNvPr", NS).attrib["name"].startswith("Data ")]
+
+
+def test_bar_chart_is_editable_and_preserves_signed_values_and_complete_evidence():
+    response = build_data_presentation(DataPresentationRequest.model_validate(chart_snapshot()))
+    archive, slides, texts = unpack(response)
+    shapes = chart_shapes(archive)
+    bars = [s for s in shapes if s.find("p:nvSpPr/p:cNvPr", NS).attrib["name"].startswith("Data bar ")]
+    assert len(bars) == 3 and response["slide_count"] == len(slides) <= 40
+    for value in ["-12.5", "28.25", "East <&>", "All retained category aggregates.", "2 target rows",
+                  "Full chart data", "total attendance", "synthetic-local.csv"]:
+        assert value in "".join(texts)
+    extents = [s.find("p:spPr/a:xfrm/a:ext", NS).attrib for s in bars]
+    assert all(int(e["cx"]) >= 0 and int(e["cy"]) > 0 for e in extents)
+    assert not any(name.startswith(("ppt/media/", "ppt/embeddings/")) for name in archive.namelist())
+    for name in archive.namelist():
+        if name.endswith((".xml", ".rels")):
+            root = ET.fromstring(archive.read(name))
+            assert not any(node.attrib.get("TargetMode") == "External" for node in root.iter())
+            assert not any(node.tag.endswith("hlinkClick") for node in root.iter())
+
+
+@pytest.mark.parametrize("values", [[0], [0, 0], [-4, -4], [-1.7e308, 0, 1.7e308]])
+def test_line_chart_geometry_remains_finite_for_zero_constant_single_and_extreme_values(values):
+    chart = deepcopy(CHART)
+    chart.update(type="line", points=[{"label": str(i), "value": value, "detail": "1 target row"}
+                                      for i, value in enumerate(values)])
+    archive, _, _ = unpack(build_data_presentation(DataPresentationRequest.model_validate(chart_snapshot(chart))))
+    shapes = chart_shapes(archive)
+    markers = [s for s in shapes if s.find("p:nvSpPr/p:cNvPr", NS).attrib["name"].startswith("Data marker ")]
+    segments = [s for s in shapes if s.find("p:nvSpPr/p:cNvPr", NS).attrib["name"].startswith("Data segment ")]
+    assert len(markers) == len(values) and len(segments) == max(0, len(values)-1)
+    for shape in shapes:
+        transform = shape.find("p:spPr/a:xfrm", NS)
+        if transform is not None:
+            for node in transform:
+                assert all(0 <= int(v) <= 12192000 for v in node.attrib.values())
+
+
+def test_line_chart_retains_all_512_points_with_unrounded_values_in_the_appendix():
+    chart = deepcopy(CHART)
+    chart.update(type="line", note="Observed dates use equal spacing; elapsed gaps may differ.",
+                 points=[{"label": f"period-{i}", "value": i + 0.123456789012,
+                          "detail": "1 target row"} for i in range(512)])
+    response = build_data_presentation(DataPresentationRequest.model_validate(chart_snapshot(chart)))
+    archive, _, texts = unpack(response)
+    shapes = chart_shapes(archive)
+    assert sum(s.find("p:nvSpPr/p:cNvPr", NS).attrib["name"].startswith("Data marker ") for s in shapes) == 512
+    flattened = "".join(texts)
+    for point in chart["points"]:
+        assert point["label"] in flattened and str(point["value"]) in flattened
+    assert chart["note"] in flattened and response["slide_count"] <= 40
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda c: c.update(type="pie"), lambda c: c.update(svg="<svg/>"),
+    lambda c: c.update(url="https://bad"), lambda c: c.update(points=[]),
+    lambda c: c.update(points=c["points"] * 5),
+    lambda c: c["points"][0].update(value=True),
+    lambda c: c["points"][0].update(value="1"),
+    lambda c: c["points"][0].update(value=float("inf")),
+    lambda c: c["points"][0].update(value=float("nan")),
+    lambda c: c["points"][0].update(rows=[["raw"]]),
+    lambda c: c.update(title=" "), lambda c: c["points"][0].update(label="invalid\u0000xml"),
+])
+def test_chart_snapshot_rejects_unsupported_or_unbounded_content(mutation):
+    data = chart_snapshot()
+    mutation(data["result"]["chart"])
+    with pytest.raises(ValueError):
+        DataPresentationRequest.model_validate(data)
+
+
+def test_chart_text_is_escaped_and_long_labels_and_notes_are_not_lost():
+    chart = deepcopy(CHART)
+    chart["title"] = '<a:hlinkClick r:id="evil"/> & chart'
+    chart["points"][0]["label"] = "界" * 90 + "ENDLABEL"
+    chart["note"] = ("A retained chart caveat. " * 35) + "ENDNOTE"
+    archive, _, texts = unpack(build_data_presentation(DataPresentationRequest.model_validate(chart_snapshot(chart))))
+    flattened = "".join(texts)
+    for value in [chart["title"], chart["points"][0]["label"], "ENDNOTE"]:
+        assert value in flattened
+    for name in archive.namelist():
+        if name.endswith(".xml"):
+            assert not any(node.tag.endswith("hlinkClick") for node in ET.fromstring(archive.read(name)).iter())
+
+@pytest.mark.parametrize("values", [[-4, -2], [0, 0], [-1.7e308, 1.7e308]])
+def test_bar_shapes_anchor_negative_and_positive_values_at_the_zero_baseline(values):
+    chart = deepcopy(CHART)
+    chart["points"] = [{"label": str(i), "value": value, "detail": ""} for i, value in enumerate(values)]
+    archive, _, _ = unpack(build_data_presentation(DataPresentationRequest.model_validate(chart_snapshot(chart))))
+    root = ET.fromstring(archive.read("ppt/slides/slide2.xml"))
+    all_shapes = root.findall(".//p:sp", NS)
+    baseline = next(s for s in all_shapes if s.find("p:nvSpPr/p:cNvPr", NS).attrib["name"] == "Zero baseline")
+    zero = int(baseline.find("p:spPr/a:xfrm/a:off", NS).attrib["x"])
+    bars = chart_shapes(archive)
+    assert len(bars) == len(values)
+    for shape, value in zip(bars, values):
+        transform = shape.find("p:spPr/a:xfrm", NS)
+        left = int(transform.find("a:off", NS).attrib["x"])
+        width = int(transform.find("a:ext", NS).attrib["cx"])
+        assert 0 <= left <= left + width <= 12192000
+        if value < 0:
+            assert abs(left + width - zero) <= 1
+        elif value > 0:
+            assert left == zero
+        else:
+            assert width <= 1 and left == zero
