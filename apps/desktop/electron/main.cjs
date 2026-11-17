@@ -2,6 +2,7 @@
 // No tokens or arbitrary APIs are exposed to the renderer.
 const {app, BrowserWindow, ipcMain, dialog, safeStorage} = require('electron');
 const {createModelSettings} = require('./model-settings.cjs');
+const {saveDataAnswer} = require('./data-answer-export.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const {isAllowedNavigation} = require('./navigation.cjs');
@@ -96,6 +97,20 @@ app.whenReady().then(async () => {
       }
       if (!backend) throw new Error('BOLT local backend is unavailable');
       return backend.request(route, options);
+    });
+    ipcMain.handle('bolt:save-data-answer', async (event, input) => {
+      const source = event.senderFrame?.url;
+      if (event.senderFrame !== event.sender.mainFrame
+          || !isAllowedNavigation(source, process.env.BOLT_DEV === '1',
+            DEV_URL, path.join(__dirname, '../dist/index.html'))) {
+        throw new Error('Unauthorized BOLT renderer');
+      }
+      const owner = BrowserWindow.fromWebContents(event.sender);
+      if (!owner) throw new Error('BOLT window is unavailable');
+      return saveDataAnswer(input, {
+        showSaveDialog: options => dialog.showSaveDialog(owner, options),
+        writeFile: fs.promises.writeFile,
+      });
     });
     ipcMain.handle('bolt:save-artifact', async (event, artifactId, sessionId, filename) => {
       const source = event.senderFrame?.url;

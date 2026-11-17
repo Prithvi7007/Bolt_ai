@@ -56,3 +56,13 @@
 .lab-data-workflow summary:focus-visible{outline:2px solid #FBBF24;outline-offset:3px}
 .lab-data-workflow ol{padding-left:22px;margin:8px 0}
 .lab-data-workflow details p{color:#A7BEDC;margin:8px 0 0}
+
+.lab-ask-exports{margin-top:18px;padding-top:14px;border-top:1px solid #36506C}
+.lab-ask-export-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lab-ask-export-actions button{display:flex;gap:7px;align-items:center;min-height:44px;padding:9px 13px;border:1px solid #47658A;border-radius:8px;background:#203A59;color:#E5EFFE;font:inherit;font-size:11px;cursor:pointer}
+.lab-ask-export-actions button:hover:not(:disabled){background:#2A4B71;border-color:#8CB6FF}
+.lab-ask-export-actions button:focus-visible{outline:2px solid #FBBF24;outline-offset:3px}
+.lab-ask-export-actions button:disabled{opacity:.5;cursor:wait}
+.lab-ask-exports>p,.lab-ask-export-status{color:#ADC3DF;font-size:11px;line-height:1.6}
+.lab-ask-exports>p{margin:8px 0 0}
+.lab-ask-exports .lab-ask-export-error{color:#FECACA}
