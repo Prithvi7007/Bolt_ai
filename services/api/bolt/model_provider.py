@@ -1,5 +1,6 @@
 """Runtime-only personal model connection for the authenticated desktop service."""
 from __future__ import annotations
+import json
 from threading import RLock
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -93,6 +94,31 @@ class LocalModelRuntime:
                 raise LookupError("Model settings changed; test the current connection again")
             self._verified = True
             return self.status()
+
+    def plan_data(self, request):
+        from .local_data_plans import validate_data_plan
+        request.validate_schema()
+        with self._lock:
+            config = self._config
+        if config is None:
+            raise LookupError("Configure a personal model in Settings first")
+        try:
+            gateway = self._factory(config)
+            payload = gateway.plan_local(request.question, request.target,
+                [column.model_dump() for column in request.columns])
+            if config.token and config.token in json.dumps(payload, ensure_ascii=False):
+                raise ValueError('Model response included a credential')
+            plan = validate_data_plan(payload, request)
+            usage = getattr(gateway, "last_usage", {})
+            return {"plan": plan, "model": config.model, "usage": {
+                key: value if type(value) is int and 0 <= value <= 1_000_000_000 else 0
+                for key in ("prompt_tokens", "completion_tokens", "cached_tokens")
+                for value in (usage.get(key, 0),)
+            }}
+        except Exception:
+            raise ModelConnectionError(
+                "The model could not return a supported CSV calculation plan. Check the connection or rephrase the question."
+            ) from None
 
     def disconnect(self):
         with self._lock:

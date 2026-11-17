@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { constants, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -175,6 +176,32 @@ async function shutdown(running) {
 async function main() {
   const sandbox = mkdtempSync(path.join(tmpdir(), 'bolt-gui-'));
   let running;
+  const modelRequests = [];
+  const modelServer = createHttpServer((request, response) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', chunk => { body += chunk; if (body.length > 64000) request.destroy(); });
+    request.on('end', () => {
+      try {
+        assert.equal(request.method, 'POST');
+        assert.equal(request.url, '/v1/chat/completions');
+        const payload = JSON.parse(body);
+        modelRequests.push(JSON.parse(payload.messages[1].content));
+        const encoded = JSON.stringify({choices:[{message:{content:JSON.stringify({kind:'sum',target:'attendance'})}}],
+          usage:{prompt_tokens:20,completion_tokens:10}});
+        response.writeHead(200, {'Content-Type':'application/json','Content-Length':Buffer.byteLength(encoded)});
+        response.end(encoded);
+      } catch {
+        response.writeHead(400); response.end('{}');
+      }
+    });
+  });
+  await new Promise((resolve,reject) => {
+    modelServer.once('error',reject);
+    modelServer.listen(0,'127.0.0.1',resolve);
+  });
+  const modelPort = modelServer.address().port;
+
   try {
     running = await launch(sandbox);
     const first = running.cdp;
@@ -255,6 +282,30 @@ async function main() {
     assert.equal(await first.eval(
       'document.querySelector(".lab-ask-evidence")?.textContent?.includes("3 numeric target rows")'
     ), true, 'Real CSV question contains an evidence-backed row count');
+    const configured = await first.eval('window.boltApi.modelSettings("save",'+JSON.stringify({
+      endpoint:'http://127.0.0.1:'+modelPort+'/v1',model:'synthetic-planner',auth_mode:'none',token:'',timeout_seconds:10,
+    })+')');
+    assert.equal(configured.configured,true,'Packaged personal model configuration must work');
+    assert.equal(await first.eval(
+      '(() => { const input=document.querySelector(".lab-ai-choice input"); if(!input||input.disabled)return false; input.click(); document.querySelector(".lab-ask-composer textarea").focus(); return input.checked; })()'
+    ),true,'CSV AI planning must require an explicit opt-in');
+    await first.send('Input.insertText',{text:'Give me a quick snapshot of attendance'});
+    await eventually(async()=>await first.eval(
+      '!document.querySelector(".lab-ask-composer button")?.disabled'
+    ),'CSV AI question is ready to submit');
+    await first.eval('document.querySelector(".lab-ask-composer button").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-ask-planning")?.textContent?.includes("AI interpretation: sum") && document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("350")'
+    ),'AI schema interpretation computes the real local CSV total');
+    assert.equal(modelRequests.length,1,'Unfamiliar question makes one model planning call');
+    assert.deepEqual(Object.keys(modelRequests[0]).sort(),['columns','question','target']);
+    assert.deepEqual(modelRequests[0].columns,[{name:'month',type:'date'},{name:'attendance',type:'numeric'}]);
+    const transmitted = JSON.stringify(modelRequests[0]);
+    for(const value of ['synthetic-lab.csv','2026-01','100','120','130','preview']) {
+      assert.equal(transmitted.includes(value),false,'CSV source values must not reach the model');
+    }
+    await first.eval('window.boltApi.modelSettings("disconnect")');
+    console.log('PASS: packaged CSV AI planning shares schema only and calculates the actual local total');
     await first.eval(
       '([...document.querySelectorAll("button.workspace-button")].find(x => x.textContent.includes("Analyst")))?.click()'
     );
@@ -276,6 +327,8 @@ async function main() {
     ), true, 'Restart must restore SQL evidence from persisted conversation');
     console.log('PASS: packaged Electron restart restores conversation, chart and evidence');
   } finally {
+    modelServer.closeAllConnections();
+    await new Promise(resolve=>modelServer.close(resolve));
     await shutdown(running);
     try { rmSync(sandbox, {recursive: true, force: true, maxRetries: 10, retryDelay: 300}); }
     catch (error) { console.error('Warning: temporary GUI sandbox cleanup failed: ' + error.code); }

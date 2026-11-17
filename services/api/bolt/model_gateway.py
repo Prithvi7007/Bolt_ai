@@ -62,29 +62,12 @@ class OpenAICompatibleGateway:
         self._transport = transport
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
 
-    def plan(self, question: str, context: dict, catalog: list[dict]) -> dict:
-        clean_context = bounded_context(context)
+    def _complete(self, messages: list[dict]) -> dict:
         payload = {
             "model": self.config.model,
             "temperature": 0,
             "response_format": {"type": "json_object"},
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Return only a JSON query plan with metric, dimension, period, start, end. "
-                        "Use only the supplied semantic catalog. Never emit SQL."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps({
-                        "question": question[:2000],
-                        "working_context": clean_context,
-                        "semantic_catalog": catalog,
-                    }, separators=(",", ":")),
-                },
-            ],
+            "messages": messages,
         }
         headers = {"Content-Type": "application/json"}
         if self.config.token and self.config.auth_mode == "bearer":
@@ -108,12 +91,35 @@ class OpenAICompatibleGateway:
             "completion_tokens": int(usage.get("completion_tokens", 0)),
             "cached_tokens": int(usage.get("cached_tokens", details.get("cached_tokens", 0))),
         }
-        content = response["choices"][0]["message"]["content"]
-        plan = json.loads(content)
+        plan = json.loads(response["choices"][0]["message"]["content"])
+        if not isinstance(plan, dict):
+            raise ValueError("Model returned an invalid structured plan")
+        return plan
+
+    def plan(self, question: str, context: dict, catalog: list[dict]) -> dict:
+        plan = self._complete([
+            {"role": "system", "content": (
+                "Return only a JSON query plan with metric, dimension, period, start, end. "
+                "Use only the supplied semantic catalog. Never emit SQL."
+            )},
+            {"role": "user", "content": json.dumps({
+                "question": question[:2000],
+                "working_context": bounded_context(context),
+                "semantic_catalog": catalog,
+            }, separators=(",", ":"))},
+        ])
         required = {"metric", "dimension", "period", "start", "end"}
         if set(plan) != required or not all(isinstance(plan[key], str) for key in required):
             raise ValueError("Model returned an invalid structured query plan")
         return plan
+
+    def plan_local(self, question: str, target: str, columns: list[dict]) -> dict:
+        from .local_data_plans import DataPlanRequest, LOCAL_PLAN_INSTRUCTION
+        request = DataPlanRequest(question=question, target=target, columns=columns).validate_schema()
+        return self._complete([
+            {"role": "system", "content": LOCAL_PLAN_INSTRUCTION},
+            {"role": "user", "content": request.model_dump_json()},
+        ])
 
 
 def query_plan_from_gateway(payload: dict) -> QueryPlan:

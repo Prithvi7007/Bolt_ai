@@ -27,7 +27,7 @@
 .lab-ask-proof svg{flex-shrink:0;margin-top:1px;color:#8CB6FF}
 .lab-ask-proof b{display:block;color:#E1EDFD;margin-bottom:2px}
 .lab-ask-proof span{display:block}
-.lab-ask-evidence{display:flex;align-items:flex-start;gap:8px;color:#9AB2D2;font-size:10px;line-height:1.5;margin:12px 0 0}
+.lab-ask-evidence,.lab-ask-planning{display:flex;align-items:flex-start;gap:8px;color:#9AB2D2;font-size:10px;line-height:1.5;margin:12px 0 0}
 .lab-ask-evidence svg{flex-shrink:0}
 .lab-ask-caveats{margin-top:13px;color:#AABDD7;font-size:11px}
 .lab-ask-caveats summary{cursor:pointer;font-size:11px}
@@ -43,3 +43,7 @@
 .lab-ask-running{display:flex;align-items:center;gap:9px;color:#9BB9E1;font-size:11px}
 .lab-ask-bottom{display:flex;align-items:center;gap:8px;font-size:10px;line-height:1.5;color:#839CBF;margin:16px 0 0}
 @media(max-width:720px){.lab-ask{padding:17px}.lab-ask-composer>div{flex-direction:column;align-items:stretch}.lab-ask-composer button{align-self:flex-end}.lab-ask-user{max-width:100%}}
+
+.lab-ai-choice{display:flex;align-items:center;gap:10px;min-height:44px;margin:16px 0 6px;font-weight:600;cursor:pointer}
+.lab-ai-choice input{width:20px;height:20px;flex:none;accent-color:#3b82f6}
+.lab-ai-choice input:focus-visible{outline:2px solid #fbbf24;outline-offset:4px}

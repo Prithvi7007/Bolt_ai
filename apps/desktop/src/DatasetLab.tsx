@@ -63,7 +63,7 @@ export default function DatasetLab() {
         <p>Bring a CSV into BOLT. Understand its structure, check data quality, and decide which outcome matters before any forecasting or analysis begins.</p>
       </div>
 
-      <div className="lab-privacy"><ShieldCheck size={17}/><div><strong>Local by design</strong><span>CSV contents are analyzed in this Electron renderer only. No file contents are sent to the BOLT backend or any external model, and nothing is saved after you close the app.</span></div></div>
+      <div className="lab-privacy"><ShieldCheck size={17}/><div><strong>Local by design</strong><span>CSV rows are profiled and calculated on-device. Optional AI planning below shares only your question, approved target, and column names/types. Row values and previews are not uploaded; imported data is not saved after you close the app.</span></div></div>
 
       <section className="lab-upload-section" aria-label="Import a CSV dataset">
         <div className="lab-section-heading"><div><span>01 / IMPORT</span><h2>Dataset source</h2></div><span className="lab-section-meta">CSV · UTF-8 · On-device</span></div>
@@ -131,7 +131,7 @@ export default function DatasetLab() {
             <button onClick={() => setApprovedTarget(selectedTarget)} disabled={!selectedTarget}><Check size={16}/> Approve target</button>
           </div>
           {selectedTarget && <p className="lab-target-rationale"><Info size={15}/>{profile.suggestedTargets.find(item => item.name === selectedTarget)?.reason || 'Selected numeric column; confirm it represents the intended outcome.'}</p>}
-          {approvedTarget && <div className="lab-approved" role="status"><Check size={18}/><div><strong>Target approved: {approvedTarget}</strong><p>The objective is ready. Run local descriptive analysis below; no data is sent to an AI provider, and no model is trained.</p></div></div>}
+          {approvedTarget && <div className="lab-approved" role="status"><Check size={18}/><div><strong>Target approved: {approvedTarget}</strong><p>The objective is ready. Run local descriptive analysis below. AI question planning is optional and does not upload CSV rows or train a model.</p></div></div>}
         </section>
 
         {approvedTarget && sourceFile && <LocalAnalysis key={approvedTarget} file={sourceFile} profile={profile} target={approvedTarget}/>}
@@ -145,7 +145,7 @@ export default function DatasetLab() {
           <p className="lab-table-note">First five valid rows shown. Preview values are truncated to 160 characters; all valid rows contribute to profile statistics. {profile.rejectedRows ? profile.rejectedRows + ' malformed rows were excluded.' : ''}</p>
         </section>
       </>}
-      <div className="lab-bottom-note"><ShieldCheck size={14}/> BOLT Data Lab now supports restricted, local questions about the approved CSV target. The separate Analyst workspace continues to use synthetic demo data; no LLM is used.</div>
+      <div className="lab-bottom-note"><ShieldCheck size={14}/> Data Lab calculates against your imported CSV. Optional AI interprets questions from schema only. The separate Analyst workspace continues to use the synthetic demo dataset.</div>
     </div>
   </main>;
 }

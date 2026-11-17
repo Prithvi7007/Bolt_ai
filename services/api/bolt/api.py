@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from .artifacts import ChartBuilder, PPTX_MIME, PresentationBuilder, SVG_MIME
 from .memory import SessionStore
 from .model_provider import LocalModelRuntime, ModelConnectionError, ModelSettings
+from .local_data_plans import DataPlanRequest
 from .data import load_fixture
 from .engine import answer
 from .semantic_catalog import catalog_payload
@@ -141,9 +142,22 @@ def create_app(
     if local_models is not None:
         @app.exception_handler(RequestValidationError)
         async def private_model_validation(request: Request, exc: RequestValidationError):
-            if request.url.path.startswith("/_desktop/model"):
+            if request.url.path.startswith("/_desktop/"):
                 return JSONResponse(status_code=422, content={"detail": "Invalid model settings"})
             return await request_validation_exception_handler(request, exc)
+
+        @app.post("/_desktop/data/plan")
+        def plan_local_data(req: DataPlanRequest):
+            try:
+                req.validate_schema()
+            except ValueError:
+                raise HTTPException(422, "Invalid CSV planning schema") from None
+            try:
+                return local_models.plan_data(req)
+            except LookupError as exc:
+                raise HTTPException(409, str(exc)) from None
+            except ModelConnectionError as exc:
+                raise HTTPException(502, str(exc)) from None
 
         @app.get("/_desktop/model")
         def model_status():

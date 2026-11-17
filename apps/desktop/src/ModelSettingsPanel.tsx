@@ -73,7 +73,7 @@ export default function ModelSettingsPanel({onChange}:{onChange:()=>void}){
       {status?.notice&&<p className="connection-note">{status.notice}</p>}
       {message&&<p role="status" className="connection-note">{message}</p>}
       {error&&<p role="alert" className="error-notice">{error}</p>}
-      <small>Keys use the operating system's protected storage when available. Otherwise they are used for this session only. This connection currently assists Analyst queries against the built-in revenue catalog; it does not upload or analyze your CSV with a model.</small>
+      <small>Keys use the operating system's protected storage when available. Otherwise they are used for this session only. This connection assists Analyst queries and optional schema-only AI planning in Data Lab. CSV row values stay on-device.</small>
     </>}
   </article>;
 }
