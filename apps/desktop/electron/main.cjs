@@ -67,6 +67,16 @@ app.whenReady().then(async () => {
       if (operation === 'disconnect') return modelSettings.disconnect();
       throw new Error('Unsupported model operation');
     });
+    ipcMain.handle('bolt:plan-data', async (event, input) => {
+      const source = event.senderFrame?.url;
+      if (event.senderFrame !== event.sender.mainFrame
+          || !isAllowedNavigation(source, process.env.BOLT_DEV === '1',
+            DEV_URL, path.join(__dirname, '../dist/index.html'))) {
+        throw new Error('Unauthorized BOLT renderer');
+      }
+      if (!backend) throw new Error('BOLT local backend is unavailable');
+      return backend.planData(input);
+    });
     ipcMain.handle('bolt:request', async (event, route, options) => {
       // Do not let subframes or an unexpectedly navigated page query local data.
       const source = event.senderFrame?.url;

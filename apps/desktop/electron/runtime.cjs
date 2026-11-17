@@ -9,6 +9,32 @@ const SESSION_PATH = /^\/v1\/sessions\/[a-f0-9]{32}\/turns$/;
 const ARTIFACT_LIST_PATH = /^\/v1\/artifacts\?session_id=[a-f0-9]{32}$/;
 const ARTIFACT_DOWNLOAD_PATH = /^\/v1\/artifacts\/[a-f0-9]{32}\?session_id=[a-f0-9]{32}$/;
 
+function validateDataPlanningRequest(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+      || Object.keys(input).sort().join(',') !== 'columns,question,target'
+      || typeof input.question !== 'string' || !input.question.trim() || input.question.length > 400
+      || typeof input.target !== 'string' || !input.target || input.target.length > 160
+      || !Array.isArray(input.columns) || input.columns.length < 1 || input.columns.length > 256) {
+    throw new Error('Invalid CSV planning request');
+  }
+  const seen = new Set();
+  const columns = input.columns.map(column => {
+    if (!column || typeof column !== 'object' || Array.isArray(column)
+        || Object.keys(column).sort().join(',') !== 'name,type'
+        || typeof column.name !== 'string' || !column.name.trim() || column.name.length > 160
+        || /[\x00-\x1f\x7f]/.test(column.name) || seen.has(column.name.toLowerCase())
+        || !['numeric','categorical','date','text'].includes(column.type)) {
+      throw new Error('Invalid CSV planning columns');
+    }
+    seen.add(column.name.toLowerCase());
+    return {name:column.name,type:column.type};
+  });
+  if (!columns.some(column => column.name === input.target && column.type === 'numeric')) {
+    throw new Error('Approve a numeric target before AI planning');
+  }
+  return {question:input.question,target:input.target,columns};
+}
+
 function validateRequest(route, options = {}) {
   if (typeof route !== 'string' || route.length > 100) throw new Error('Unsupported BOLT API route');
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid request');
@@ -155,7 +181,7 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
         body:data === undefined?undefined:JSON.stringify(data),
       }, 130000);
       if (!result.ok) throw new Error(
-        result.status === 409 ? 'Save a model connection before testing.' :
+        result.status === 409 ? 'Save a model connection in Settings first.' :
         result.status === 422 ? 'Invalid model settings. Check endpoint, authentication and model.' :
         'Model connection failed. Check endpoint, key and model, then try again.');
       return result.data;
@@ -171,6 +197,7 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
     }
     if (!health?.ok || health.data.mode !== 'synthetic') throw new Error('BOLT API did not respond to authenticated health check');
     return { port, request: doRequest, stop, child,
+      planData:input => modelRequest('/_desktop/data/plan', validateDataPlanningRequest(input)),
       modelStatus:() => modelRequest('/_desktop/model'),
       configureModel:config => modelRequest('/_desktop/model', config),
       testModel:() => modelRequest('/_desktop/model/test', {}),
@@ -182,4 +209,4 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
   }
 }
 
-module.exports = { validateRequest, backendCommand, readyPort, startBackend };
+module.exports = { validateDataPlanningRequest, validateRequest, backendCommand, readyPort, startBackend };

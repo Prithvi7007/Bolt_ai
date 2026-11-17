@@ -139,7 +139,7 @@ export function planDataQuestion(question, profile, approvedTarget) {
     'show me '+targetName, 'what is '+targetName,
   ];
   if (overviewQuestions.includes(normalize(q))) return {kind:'overview', target:approvedTarget};
-  return {kind:'unsupported', error:'I could not match that to a supported calculation. Try one of the suggested questions.'};
+  return {kind:'unsupported', aiEligible:true, error:'I could not match that to a supported calculation. Try one of the suggested questions.'};
 }
 
 function fmt(n, digits = 2) {
@@ -173,11 +173,52 @@ function result(kind, title, answer, calculation, report, table = [], extra = []
 }
 
 export async function answerDataQuestion(file, question, profile, approvedTarget) {
-  const plan = planDataQuestion(question,profile,approvedTarget);
-  if (plan.kind === 'unsupported') return unsupported(plan.error);
+  return answerDataPlan(file, planDataQuestion(question,profile,approvedTarget), profile, approvedTarget);
+}
+
+export function validateDataPlan(input, profile, approvedTarget) {
+  const all = ['kind','target','dimension','dateColumn','predictor','aggregation','ranking','limit','reason'];
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+      || Object.keys(input).some(key => !all.includes(key))) throw new Error('Invalid calculation plan');
+  if (!profile?.columns?.some(c => c.name === approvedTarget && c.type === 'numeric')
+      || input.target !== approvedTarget) throw new Error('The model cannot change the approved numeric target');
+  const plan = Object.fromEntries(Object.entries(input).filter(([,value]) => value !== null && value !== undefined));
+  const allowed = ['kind','target'];
+  const column = (name,type) => profile.columns.some(c => c.name === name && c.type === type);
+  switch (plan.kind) {
+    case 'overview': case 'sum': case 'mean': case 'count': case 'range': case 'quality': break;
+    case 'group':
+      allowed.push('dimension','aggregation','ranking','limit');
+      if (!column(plan.dimension,'categorical') || !['sum','mean'].includes(plan.aggregation)
+          || (plan.ranking !== undefined && !['top','bottom'].includes(plan.ranking))) throw new Error('Invalid grouped calculation');
+      plan.limit ??= 5;
+      if (!Number.isInteger(plan.limit) || plan.limit < 1 || plan.limit > 10) throw new Error('Invalid ranking limit');
+      break;
+    case 'timeline':
+      allowed.push('dateColumn','aggregation');
+      if (!column(plan.dateColumn,'date') || !['sum','mean'].includes(plan.aggregation)) throw new Error('Invalid date calculation');
+      break;
+    case 'correlation':
+      allowed.push('predictor');
+      if (plan.predictor !== undefined && (plan.predictor === approvedTarget || !column(plan.predictor,'numeric'))) throw new Error('Invalid numeric predictor');
+      break;
+    case 'unsupported':
+      allowed.push('reason');
+      if (plan.reason !== undefined && (typeof plan.reason !== 'string' || plan.reason.length > 200)) throw new Error('Invalid clarification');
+      plan.reason = 'Choose a supported descriptive calculation, such as a total, mean or categorical breakdown.';
+      break;
+    default: throw new Error('Unsupported calculation');
+  }
+  if (Object.keys(plan).some(key => !allowed.includes(key))) throw new Error('Unsupported fields in calculation plan');
+  return plan;
+}
+
+export async function answerDataPlan(file, inputPlan, profile, approvedTarget) {
+  if (inputPlan.kind === 'unsupported') return unsupported(inputPlan.error || inputPlan.reason || 'Please rephrase the question.');
+  const plan = validateDataPlan(inputPlan,profile,approvedTarget);
   if (plan.kind === 'quality') return qualityAnswer(profile,approvedTarget);
 
-  const requestedDate = plan.kind === 'timeline' ? profile.dateColumn : null;
+  const requestedDate = plan.kind === 'timeline' ? plan.dateColumn : null;
   const requestedGroup = plan.kind === 'group' ? plan.dimension : null;
   const report = await analyzeCsvFile(file,{
     target:approvedTarget, dimension:requestedGroup, dateColumn:requestedDate,

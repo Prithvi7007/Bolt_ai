@@ -1,4 +1,4 @@
-"""Guard the local-only Data Lab's Node regression suite and privacy boundaries."""
+"""Guard local CSV calculations and optional schema-only AI planning."""
 from pathlib import Path
 import subprocess
 
@@ -14,7 +14,7 @@ def test_local_csv_profiler_regressions():
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
 
 
-def test_csv_data_is_never_transmitted_to_the_synthetic_backend():
+def test_csv_profiling_and_source_rows_remain_local():
     profiler = (ROOT / "apps" / "desktop" / "src" / "dataset-understanding.mjs").read_text(encoding="utf-8")
     lab = (ROOT / "apps" / "desktop" / "src" / "DatasetLab.tsx").read_text(encoding="utf-8")
     assert "profileCsvFile(file)" in lab
@@ -23,7 +23,6 @@ def test_csv_data_is_never_transmitted_to_the_synthetic_backend():
         assert network_call not in profiler
         assert network_call not in lab
     assert "target" in lab.lower() and "Approve target" in lab
-    assert "No file contents are sent" in lab
 
 def test_local_analysis_regressions_and_network_boundary():
     suite = ROOT / "apps" / "desktop" / "src" / "local-analysis.test.mjs"
@@ -41,10 +40,10 @@ def test_local_analysis_regressions_and_network_boundary():
     assert "No remote request" in analysis_ui
 
 def test_ask_your_data_local_query_contract():
-    """Questions and CSV analysis must stay inside the sandboxed renderer."""
+    """Numerical analysis stays local; AI planning receives only explicit metadata."""
     suite = ROOT / "apps" / "desktop" / "src" / "ask-data.test.mjs"
     result = subprocess.run(
-        ["node", "--test", str(suite)],
+        ["node", "--test", str(suite), str(suite.with_name("ai-data.test.mjs"))],
         capture_output=True, text=True, encoding="utf-8", timeout=35,
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
@@ -54,7 +53,7 @@ def test_ask_your_data_local_query_contract():
     for network_call in ("fetch(", "XMLHttpRequest", "sendBeacon(", "boltApi.request("):
         assert network_call not in engine
         assert network_call not in gui
-    assert "answerDataQuestion(file" in gui
+    assert "answerWithAIPlanning(file" in gui
     assert "approvedTarget && sourceFile && <AskYourData" in lab
     assert "No filters, forecasts or causal claims" in gui
     assert "No model" in engine
