@@ -9,7 +9,7 @@ export type DataAnswer = {
   calculation: string | null;
   evidence: string | null;
   warnings: string[];
-  planning?: {workflow?:BoltDataWorkflow;mode:'model'|'local';operation:string;model?:string;usage?:{prompt_tokens:number;completion_tokens:number;cached_tokens:number}};
+  planning?: {plan?:QuestionPlan;scope?:string;contextUsed?:boolean;workflow?:BoltDataWorkflow;mode:'model'|'local';operation:string;model?:string;usage?:{prompt_tokens:number;completion_tokens:number;cached_tokens:number}};
 };
 export type QuestionPlan = {
   kind: string;
@@ -30,3 +30,6 @@ export function answerDataQuestion(file:File,question:string,profile:DatasetProf
 
 export function validateDataPlan(plan:unknown,profile:DatasetProfile,approvedTarget:string):QuestionPlan;
 export function answerDataPlan(file:File,plan:QuestionPlan,profile:DatasetProfile,approvedTarget:string):Promise<DataAnswer>;
+
+export function describeDataPlan(plan:QuestionPlan|null|undefined):string;
+export function resolveDataQuestionPlan(question:string,profile:DatasetProfile,approvedTarget:string,previousPlan?:QuestionPlan|null):{plan:QuestionPlan;contextUsed:boolean};

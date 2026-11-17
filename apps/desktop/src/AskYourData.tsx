@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState, type FormEvent, type KeyboardEvent} from 'react';
 import {Activity, ArrowUp, CheckCircle2, Database, Download, FileText, Info,
   MessageSquareText, ShieldCheck, Sparkles} from 'lucide-react';
-import {suggestedDataQuestions, type DataAnswer} from './ask-data.mjs';
+import {suggestedDataQuestions,describeDataPlan, type DataAnswer, type QuestionPlan} from './ask-data.mjs';
 import {answerWithAIPlanning} from './ai-data.mjs';
 import type {DatasetProfile} from './dataset-understanding.mjs';
 import DataAnswerChart from './DataAnswerChart';
@@ -81,6 +81,7 @@ function AnswerCard({answer,question,sourceName,target}: {answer:DataAnswer;ques
       ' · '+((answer.planning.usage?.prompt_tokens||0)+(answer.planning.usage?.completion_tokens||0))+' reported tokens':
       'Local interpretation · no model call'}</p>}
     {answer.planning?.workflow&&<WorkflowCard workflow={answer.planning.workflow}/>}
+    {answer.planning?.contextUsed&&<p className="lab-ask-context-resolution">Resolved follow-up: {answer.planning.scope}</p>}
     <p className="lab-ask-primary">{answer.answer}</p>
     {answer.chart&&<DataAnswerChart chart={answer.chart}/>}
     {answer.table.length>0 && <div className="lab-ask-table-scroll"><table>
@@ -105,6 +106,7 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
   const alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const [useModel,setUseModel]=useState(false);
+  const [contextPlan,setContextPlan]=useState<QuestionPlan|null>(null);
   const [phase,setPhase]=useState<'planning'|'calculating'|'confirming'>('calculating');
   const [question,setQuestion]=useState('');
   const [turns,setTurns]=useState<Turn[]>([]);
@@ -120,9 +122,10 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
     try {
       const answer=await answerWithAIPlanning(file,q,profile,target,{
         useModel,planData:window.boltApi?.planData,completeDataRun:window.boltApi?.completeDataRun,
-        onPhase:setPhase,isCurrent:()=>alive.current,
+        previousPlan:contextPlan,onPhase:setPhase,isCurrent:()=>alive.current,
       });
       if(!alive.current)return;
+      if(answer.kind==='answered'&&answer.planning?.plan)setContextPlan(answer.planning.plan.kind==='quality'?null:answer.planning.plan);
       setTurns(old=>[...old,{id:old.length?old[old.length-1].id+1:1,question:q,answer}].slice(-12));
     } catch(cause) {
       if(alive.current){setQuestion(q);setError(cause instanceof Error?cause.message:'Local calculation failed');}
@@ -147,6 +150,11 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
     <label className="lab-ai-choice"><input type="checkbox" checked={useModel} disabled={busy||!window.boltApi?.planData} onChange={event=>setUseModel(event.target.checked)}/> Use AI for unfamiliar questions</label>
     <p className="lab-table-note">{useModel?'When needed, this sends your question, approved target, and column names/types to the model configured in Settings. CSV rows, example values and filenames are not sent.':'AI planning is off. Questions and CSV data stay local.'}</p>
     <div className="lab-ask-capabilities"><span><ShieldCheck size={14}/> Local data only</span><span><Activity size={14}/> Reproducible formulas</span><span><Sparkles size={14}/> {useModel?'AI assistance enabled':'No model calls'}</span></div>
+    {contextPlan&&<div className="lab-ask-context" role="status">
+      <div><span>CURRENT CALCULATION SCOPE</span><strong className="lab-ask-context-scope">{describeDataPlan(contextPlan)}</strong>
+        <small>Short follow-ups reuse this scope. A full question starts its own scope.</small></div>
+      <button type="button" className="lab-ask-clear-context" disabled={busy} onClick={()=>setContextPlan(null)}>Clear context</button>
+    </div>}
     {turns.length===0 && <div className="lab-ask-examples">
       <p>TRY A QUESTION</p>
       <div>{questions.map((q,index)=><button type="button" key={index} disabled={busy} onClick={()=>void submit(q)}>{q}</button>)}</div>

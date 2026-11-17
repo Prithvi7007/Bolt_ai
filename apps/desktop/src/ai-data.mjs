@@ -1,5 +1,5 @@
 /** Optional schema-only interpretation; all reported numbers come from local calculation. */
-import {answerDataQuestion,answerDataPlan,planDataQuestion,validateDataPlan} from './ask-data.mjs';
+import {answerDataPlan,resolveDataQuestionPlan,describeDataPlan,validateDataPlan} from './ask-data.mjs';
 
 export function schemaPlanningRequest(question, profile, target) {
   const columns=profile.columns.map(({name,type})=>({name,type}));
@@ -20,12 +20,18 @@ function checkedWorkflow(value) {
 }
 const staleError=()=>new Error('The dataset changed. Ask again with the current dataset.');
 
-export async function answerWithAIPlanning(file,question,profile,target,{useModel=false,planData,completeDataRun,onPhase=()=>{},isCurrent=()=>true}={}) {
-  const localPlan=planDataQuestion(question,profile,target);
-  if(!useModel||localPlan.kind!=='unsupported'||!localPlan.aiEligible){
+export async function answerWithAIPlanning(file,question,profile,target,{useModel=false,planData,completeDataRun,previousPlan=null,onPhase=()=>{},isCurrent=()=>true}={}) {
+  const resolved=resolveDataQuestionPlan(question,profile,target,previousPlan);
+  const localPlan=resolved.plan;
+  if(resolved.contextUsed||!useModel||localPlan.kind!=='unsupported'||!localPlan.aiEligible){
+    if(!isCurrent())throw staleError();
     onPhase('calculating');
-    const answer=await answerDataQuestion(file,question,profile,target);
-    return {...answer,planning:{mode:'local',operation:localPlan.kind}};
+    const answer=await answerDataPlan(file,localPlan,profile,target);
+    if(!isCurrent())throw staleError();
+    const plan=localPlan.kind==='unsupported'?undefined:validateDataPlan(localPlan,profile,target);
+    const scope=plan?describeDataPlan(plan):undefined;
+    return {...answer,...(resolved.contextUsed?{warnings:['Follow-up interpreted as: '+scope+'.',...answer.warnings]}:{}),
+      planning:{mode:'local',operation:localPlan.kind,contextUsed:resolved.contextUsed,...(plan?{plan,scope}:{})}};
   }
   if(typeof planData!=='function') throw new Error('Use the desktop application and configure a model in Settings.');
   onPhase('planning');
@@ -70,6 +76,7 @@ export async function answerWithAIPlanning(file,question,profile,target,{useMode
     const value=response.usage?.[key];
     return [key,Number.isInteger(value)&&value>=0&&value<=1_000_000_000?value:0];
   }));
-  return {...answer,planning:{mode:'model',operation:plan.kind,
+  return {...answer,planning:{mode:'model',operation:plan.kind,contextUsed:false,
+    ...(plan.kind!=='unsupported'?{plan,scope:describeDataPlan(plan)}:{}),
     model:typeof response.model==='string'?response.model.slice(0,200):'Configured model',usage,...(workflow?{workflow}:{})}};
 }

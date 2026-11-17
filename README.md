@@ -56,6 +56,12 @@ Grouped totals and means show bar charts; observed date-series answers show line
 
 Choose **Save chart** for a standalone SVG with source and calculation evidence. HTML reports embed the chart and full chart-data table; CSV exports add chart rows at full numeric precision. PowerPoint continues to export editable text slides of the displayed answer/table. Chart generation and export make no additional model or graph call. See [CSV answer charts](docs/standalone-data-charts.md).
 
+## Follow up within a CSV calculation
+
+Data Lab shows the current calculation scope after an answer. Short follow-ups such as **And average?**, **And by region?**, **And bottom 3?**, or **Repeat that** reuse its validated grouping and target, then calculate again locally. Use the actual categorical column name for a breakdown. A full question starts its own scope. **Clear context**, replacing the CSV, or changing the target resets reusable context.
+
+The resolved scope appears beside the answer and in its exported methodology notes. Missing or ambiguous context asks for a complete question; filters, unsupported inference and alternate targets keep their existing checks. Follow-ups do not send previous results to the model or call the model again. Profile-derived quality summaries are not reusable numeric context. See [CSV follow-up questions](docs/standalone-data-followups.md).
+
 ## Run the actual Electron desktop app
 
 With Node.js 22+ and npm installed, first install the Python service requirements from the repository root (`python -m pip install -r services/api/requirements.txt`), then run:
