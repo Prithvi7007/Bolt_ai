@@ -46,9 +46,9 @@ See [standalone model connection](docs/standalone-model-connection.md) for scope
 
 ## Save Data Lab analyses
 
-After calculating an answer in Data Lab, choose **Save report** for a self-contained, printable HTML report or **Export CSV** for analysis results. A native Save dialog lets you choose the destination each time. Both exports include the question, source filename, approved target, displayed answer/table, calculation evidence and caveats. CSV values retain their display formatting; exports contain the displayed analysis rather than the source rows.
+After calculating an answer in Data Lab, choose **Save report** for a self-contained, printable HTML report, **Export CSV** for analysis results, or **Save PowerPoint** for editable text slides. A native Save dialog lets you choose the destination each time. All formats include the question, source filename, approved target, displayed answer/table, calculation evidence and caveats. CSV values retain their display formatting; exports contain the displayed analysis rather than the source rows.
 
-Export generation stays on-device and does not call the model. Saved reports remain on disk, while the imported CSV and unsaved Data Lab answers remain app-session data. See [local analysis exports](docs/standalone-data-exports.md) and [LangGraph workflow](docs/standalone-langgraph-workflow.md).
+Export generation stays on-device and does not call the model. PowerPoint is built in memory by the bundled Python service; HTML and CSV are generated in Electron main. Saved reports remain on disk, while the imported CSV and unsaved Data Lab answers remain app-session data. See [local analysis exports](docs/standalone-data-exports.md), [CSV PowerPoint export](docs/standalone-data-powerpoint.md), and [LangGraph workflow](docs/standalone-langgraph-workflow.md).
 
 ## Run the actual Electron desktop app
 

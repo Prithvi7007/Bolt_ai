@@ -37,7 +37,7 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
   const [saving,setSaving]=useState(false);
   const [notice,setNotice]=useState('');
   const [saveError,setSaveError]=useState('');
-  async function save(format:'html'|'csv') {
+  async function save(format:'html'|'csv'|'pptx') {
     if(saving||!window.boltApi?.saveDataAnswer)return;
     setSaving(true);setNotice('');setSaveError('');
     const {title,table,calculation,evidence,warnings}=answer;
@@ -46,9 +46,11 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
         format,sourceName,target,question,interpretation:answer.planning?.mode||'local',
         result:{title,answer:answer.answer,table,calculation,evidence,warnings},
       });
-      if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':'Analysis CSV saved.'):'Save cancelled.');
-    } catch {
-      if(alive.current)setSaveError('Could not save this analysis. Choose a writable folder and try again.');
+      if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':format==='pptx'?'PowerPoint saved.':'Analysis CSV saved.'):'Save cancelled.');
+    } catch(cause) {
+      if(alive.current)setSaveError(cause instanceof Error&&cause.message.includes('HTML or CSV')?
+        'PowerPoint export could not be completed. Save as HTML or CSV for this answer, or try again.':
+        'Could not save this analysis. Choose a writable folder and try again.');
     } finally {
       if(alive.current)setSaving(false);
     }
@@ -58,9 +60,10 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
     <div className="lab-ask-export-actions" aria-label="Save this CSV analysis">
       <button type="button" className="lab-ask-save-report" disabled={saving} onClick={()=>void save('html')}><FileText size={15}/> Save report</button>
       <button type="button" className="lab-ask-save-csv" disabled={saving} onClick={()=>void save('csv')}><Download size={15}/> Export CSV</button>
+      <button type="button" className="lab-ask-save-pptx" disabled={saving} onClick={()=>void save('pptx')}><FileText size={15}/> Save PowerPoint</button>
       <span className="lab-ask-export-status" role="status">{saving?'Choose where to save…':notice}</span>
     </div>
-    <p>Saves the displayed answer, table, calculation and caveats. Reports use HTML; CSV values keep their display formatting.</p>
+    <p>Saves the displayed answer, table, calculation and caveats. Choose an HTML report, CSV results, or editable PowerPoint text slides. Values keep their display formatting.</p>
     {saveError&&<p role="alert" className="lab-ask-export-error">{saveError}</p>}
   </div>;
 }

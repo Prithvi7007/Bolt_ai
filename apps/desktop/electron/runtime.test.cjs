@@ -160,3 +160,30 @@ test('workflow transport uses private routes and status-only receipts', async ()
     assert.equal(requests.length,3,'Rejected fields must not reach the local service');
   } finally {backend.stop();}
 });
+
+test('local PowerPoint transport is authenticated, bounded and inaccessible through generic IPC',async()=>{
+  const {startBackend}=require('./runtime.cjs');
+  const fake=new EventEmitter();
+  fake.stdout=new PassThrough();fake.stderr=new PassThrough();
+  fake.exitCode=null;fake.signalCode=null;fake.kill=()=>{};
+  const requests=[];
+  const backend=await startBackend({command:'fake-python',args:[],cwd:process.cwd(),bundled:false},{
+    spawnProcess:()=>{queueMicrotask(()=>fake.stdout.write('BOLT_READY 45678\n'));return fake;},
+    fetchImpl:async(url,options)=>{
+      requests.push({url,options});
+      return {ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify({mode:'synthetic'})};
+    },
+  });
+  const input={format:'pptx',sourceName:'synthetic.csv',target:'attendance',question:'What is the total attendance?',
+    interpretation:'local',result:{title:'Total attendance',answer:'350',table:[],
+      calculation:'Sum',evidence:'3 numeric target rows',warnings:[]}};
+  try{
+    await backend.createDataPresentation(input);
+    assert.equal(requests[1].url,'http://127.0.0.1:45678/_desktop/data/presentation');
+    assert.deepEqual(JSON.parse(requests[1].options.body),input);
+    assert.match(requests[1].options.headers.Authorization,/^Bearer [a-f0-9]{64}$/);
+    await assert.rejects(()=>backend.createDataPresentation({...input,rows:[['secret']]}),/Invalid/);
+    await assert.rejects(()=>backend.request('/_desktop/data/presentation',{method:'POST',body:'{}'}),/Unsupported/);
+    assert.equal(requests.length,2,'Invalid fields cannot reach the sidecar');
+  }finally{backend.stop();}
+});
