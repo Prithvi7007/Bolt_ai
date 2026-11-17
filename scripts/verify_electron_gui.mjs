@@ -412,14 +412,34 @@ async function main() {
       ),'The HTML report saves an embedded calculated chart');
       const chartHtml=readFileSync(chartReport,'utf8');
       assert.ok(chartHtml.includes('<svg')&&chartHtml.includes('Full chart data')&&chartHtml.includes('130'));
-      const chartTextDeck=path.join(sandbox,'synthetic-trend.pptx');
+      const chartDeck=path.join(sandbox,'synthetic-trend.pptx');
       await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-pptx").click()');
-      respondToSaveDialog(chartTextDeck);
-      await eventually(async()=>existsSync(chartTextDeck)&&await first.eval(
+      respondToSaveDialog(chartDeck);
+      await eventually(async()=>existsSync(chartDeck)&&await first.eval(
         'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "PowerPoint saved."'
-      ),'Charted answers retain their strict text-slide PowerPoint export');
-      assert.equal(readFileSync(chartTextDeck).subarray(0,4).toString('hex'),'504b0304');
-      console.log('PASS: packaged CSV chart uses actual aggregates, exposes full data, saves SVG/HTML, and retains text-slide PowerPoint export');
+      ),'Charted answers save editable PowerPoint shapes and complete plotted values');
+      const chartInspect=[
+        'import json, sys, zipfile, xml.etree.ElementTree as ET',
+        'ns={"p":"http://schemas.openxmlformats.org/presentationml/2006/main","a":"http://schemas.openxmlformats.org/drawingml/2006/main"}',
+        'with zipfile.ZipFile(sys.argv[1]) as deck:',
+        '    roots=[ET.fromstring(deck.read(n)) for n in deck.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]',
+        '    shapes=[s for root in roots for s in root.findall(".//p:sp",ns)]',
+        '    names=[s.find("p:nvSpPr/p:cNvPr",ns).attrib["name"] for s in shapes]',
+        '    markers=[s for s in shapes if s.find("p:nvSpPr/p:cNvPr",ns).attrib["name"].startswith("Data marker ")]',
+        '    ys=[int(s.find("p:spPr/a:xfrm/a:off",ns).attrib["y"]) for s in markers]',
+        '    xml=[ET.fromstring(deck.read(n)) for n in deck.namelist() if n.endswith((".xml",".rels"))]',
+        '    print(json.dumps({"text":"".join("".join(root.itertext()) for root in roots),"markers":len(markers),"segments":sum(n.startswith("Data segment ") for n in names),"ys":ys,"external":any(node.attrib.get("TargetMode")=="External" for root in xml for node in root.iter()),"media":any(n.startswith("ppt/media/") for n in deck.namelist())}))',
+      ].join('\n');
+      const parsedChart=spawnSync('python',['-c',chartInspect,chartDeck],{encoding:'utf8',windowsHide:true,timeout:10000});
+      assert.equal(parsedChart.status,0,'The charted PPTX is a valid editable Open XML package');
+      const exportedChart=JSON.parse(parsedChart.stdout);
+      assert.equal(exportedChart.markers,3);assert.equal(exportedChart.segments,2);
+      assert.ok(exportedChart.ys[0]>exportedChart.ys[1]&&exportedChart.ys[1]>exportedChart.ys[2],'Actual increasing values produce increasing plotted heights');
+      assert.equal(exportedChart.external,false);assert.equal(exportedChart.media,false);
+      for(const value of ['Full chart data','2026-01: 100.0','2026-02: 120.0','2026-03: 130.0','equal spacing','synthetic-lab.csv','3 numeric target rows']){
+        assert.ok(exportedChart.text.includes(value),'PowerPoint chart retains '+value);
+      }
+      console.log('PASS: packaged CSV chart uses actual aggregates, saves SVG/HTML and editable PowerPoint shapes with full chart data');
     }
     assert.equal(modelRequests.length,0,'Chart calculation and export must not call the model');
     async function askLocal(question) {

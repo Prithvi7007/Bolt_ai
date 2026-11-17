@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .artifacts import presentation_bytes
+from .data_chart_slides import ChartSnapshot, chart_shapes
 
 MAX_SLIDES = 40
 LINES_PER_SLIDE = 16
@@ -29,6 +30,7 @@ class AnswerSnapshot(BaseModel):
     calculation: str | None = Field(max_length=2000)
     evidence: str | None = Field(max_length=2000)
     warnings: list[str] = Field(max_length=40)
+    chart: ChartSnapshot | None = None
 
 
 def _strings(value):
@@ -101,6 +103,13 @@ def build_data_presentation(request: DataPresentationRequest) -> dict:
         rows = [f"{index}. {row.label}\nResult: {row.value}\nEvidence: {row.detail}"
                 for index, row in enumerate(result.table, 1)]
         sections.append(("Displayed table", "\n\n".join(rows)))
+    if result.chart:
+        chart = result.chart
+        rows = [f"{point.label}: {point.value} · {point.detail}" for point in chart.points]
+        sections.append(("Full chart data", "\n".join([
+            "Chart: " + chart.title, "X axis: " + chart.x_label, "Y axis: " + chart.y_label,
+            "Coverage: " + chart.note, "Unrounded calculated values in chart order:", *rows,
+        ])))
     sections.extend([
         ("Calculation and coverage", "\n\n".join([
             "Calculation: " + (result.calculation or "Not available"),
@@ -122,5 +131,11 @@ def build_data_presentation(request: DataPresentationRequest) -> dict:
                            "\n".join(lines[start:start + LINES_PER_SLIDE])))
             if len(slides) > MAX_SLIDES:
                 raise ValueError("This analysis is too long for PowerPoint. Save it as HTML or CSV instead.")
-    content = presentation_bytes(slides, created)
+    shapes = None
+    if result.chart:
+        if len(slides) >= MAX_SLIDES:
+            raise ValueError("This analysis is too long for PowerPoint. Save it as HTML or CSV instead.")
+        slides.insert(1, ("Calculated chart", ""))
+        shapes = {2: chart_shapes(result.chart)}
+    content = presentation_bytes(slides, created, slide_shapes=shapes)
     return {"content_base64": base64.b64encode(content).decode("ascii"), "slide_count": len(slides)}

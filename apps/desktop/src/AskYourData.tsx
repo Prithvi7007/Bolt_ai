@@ -45,7 +45,7 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
     try {
       const outcome=await window.boltApi.saveDataAnswer({
         format,sourceName,target,question,interpretation:answer.planning?.mode||'local',
-        result:{title,answer:answer.answer,table,calculation,evidence,warnings,...(format!=='pptx'&&answer.chart?{chart:answer.chart}:{})},
+        result:{title,answer:answer.answer,table,calculation,evidence,warnings,...(answer.chart?{chart:answer.chart}:{})},
       });
       if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':format==='pptx'?'PowerPoint saved.':format==='svg'?'Chart saved.':'Analysis CSV saved.'):'Save cancelled.');
     } catch(cause) {
@@ -65,7 +65,7 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
       {answer.chart&&<button type="button" className="lab-ask-save-chart" disabled={saving} onClick={()=>void save('svg')}><Download size={15}/> Save chart</button>}
       <span className="lab-ask-export-status" role="status">{saving?'Choose where to save…':notice}</span>
     </div>
-    <p>Saves the displayed answer, table, calculation and caveats. Choose an HTML report, CSV results, or editable PowerPoint text slides. PowerPoint keeps the displayed text/table summary. Chart-data CSV rows retain full numeric precision.</p>
+    <p>Saves the displayed answer, table, calculation and caveats. Choose an HTML report, CSV results, or PowerPoint with editable text and chart shapes. Charted PowerPoints include the full plotted values. Chart-data CSV rows retain full numeric precision.</p>
     {saveError&&<p role="alert" className="lab-ask-export-error">{saveError}</p>}
   </div>;
 }

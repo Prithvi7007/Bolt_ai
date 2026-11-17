@@ -181,3 +181,33 @@ test('PowerPoint generation errors preserve retry and alternative-format guidanc
   });
   assert.deepEqual(await saveDataAnswer(input({format:'pptx'}),deps),{saved:true});
 });
+
+const calculatedChart={type:'bar',title:'Total income by region',xLabel:'region',yLabel:'total income',
+  note:'All retained categories.',points:[{label:'East',value:-12.5,detail:'2 target rows'},{label:'West',value:28.25,detail:'3 target rows'}]};
+test('PowerPoint saves validated calculated chart data without accepting renderer XML',async()=>{
+  const payload=input({format:'pptx'});payload.result.chart=structuredClone(calculatedChart);
+  let generated=0,written=0;
+  assert.deepEqual(await saveDataAnswer(payload,{
+    showSaveDialog:async()=>({canceled:false,filePath:'chart.pptx'}),
+    createPresentation:async value=>{generated++;assert.deepEqual(value.result.chart,calculatedChart);return pptxResponse();},
+    writeFile:async(_,bytes)=>{written++;assert.deepEqual(bytes,pptxBytes);},
+  }),{saved:true});
+  assert.equal(generated,1);assert.equal(written,1);
+});
+test('invalid calculated PowerPoint charts fail before dialog, generation or writing',async()=>{
+  const bad=[
+    {...calculatedChart,type:'pie'}, {...calculatedChart,svg:'<svg/>'},
+    {...calculatedChart,points:[]}, {...calculatedChart,points:Array(13).fill(calculatedChart.points[0])},
+    {...calculatedChart,points:[{label:'x',value:Infinity,detail:''}]},
+    {...calculatedChart,points:[{label:'x',value:true,detail:''}]},
+    {...calculatedChart,points:[{label:'x',value:1,detail:'',url:'https://bad'}]},
+  ];
+  let calls=0;
+  const deps={showSaveDialog:async()=>{calls++;return {canceled:true};},
+    createPresentation:async()=>{calls++;return pptxResponse();},writeFile:async()=>{calls++;}};
+  for(const chart of bad){
+    const payload=input({format:'pptx'});payload.result.chart=chart;
+    await assert.rejects(()=>saveDataAnswer(payload,deps),/Invalid/);
+  }
+  assert.equal(calls,0);
+});
