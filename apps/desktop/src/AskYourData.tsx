@@ -8,6 +8,29 @@ import './ask-data.css';
 
 type Turn = {id:number; question:string; answer:DataAnswer};
 
+const stepLabels:Record<string,string>={
+  schema_validated:'Schema checked',model_planned:'Model plan prepared',plan_validated:'Plan checked',
+  awaiting_local:'Local calculation requested',local_completed:'Local completion reported',
+  local_failed:'Local failure reported',local_cancelled:'Calculation cancelled',
+  unsupported:'No supported calculation',workflow_finished:'Workflow finished',
+};
+const statusLabels:Record<BoltDataWorkflow['status'],string>={
+  awaiting_local:'Awaiting local calculation',unsupported:'No calculation',completed:'Completed',
+  failed:'Failed',cancelled:'Cancelled',unconfirmed:'Confirmation unavailable',
+};
+
+function WorkflowCard({workflow}:{workflow:BoltDataWorkflow}) {
+  return <div className="lab-data-workflow">
+    <div role="status" className="lab-data-workflow-status">
+      <span>Calculation workflow · LangGraph</span><strong>{statusLabels[workflow.status]}</strong>
+    </div>
+    <details><summary>View workflow steps</summary>
+      <ol>{workflow.steps.map((step,index)=><li key={index}>{stepLabels[step]}</li>)}</ol>
+      <p>The workflow records the app's execution status. Calculation evidence comes from the local CSV.</p>
+    </details>
+  </div>;
+}
+
 function AnswerCard({answer}: {answer:DataAnswer}) {
   return <article className={'lab-ask-answer '+(answer.kind==='unsupported'?'lab-ask-unsupported':'')} aria-label="Calculated dataset answer">
     <div className="lab-ask-answer-title">
@@ -18,6 +41,7 @@ function AnswerCard({answer}: {answer:DataAnswer}) {
       'AI interpretation: '+answer.planning.operation+' · '+(answer.kind==='answered'?'calculated on-device':'no calculation executed')+
       ' · '+((answer.planning.usage?.prompt_tokens||0)+(answer.planning.usage?.completion_tokens||0))+' reported tokens':
       'Local interpretation · no model call'}</p>}
+    {answer.planning?.workflow&&<WorkflowCard workflow={answer.planning.workflow}/>}
     <p className="lab-ask-primary">{answer.answer}</p>
     {answer.table.length>0 && <div className="lab-ask-table-scroll"><table>
       <thead><tr><th>Value / category</th><th>Calculated result</th><th>Evidence</th></tr></thead>
@@ -40,7 +64,7 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
   const alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const [useModel,setUseModel]=useState(false);
-  const [phase,setPhase]=useState<'planning'|'calculating'>('calculating');
+  const [phase,setPhase]=useState<'planning'|'calculating'|'confirming'>('calculating');
   const [question,setQuestion]=useState('');
   const [turns,setTurns]=useState<Turn[]>([]);
   const [busy,setBusy]=useState(false);
@@ -54,7 +78,8 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
     setBusy(true);
     try {
       const answer=await answerWithAIPlanning(file,q,profile,target,{
-        useModel,planData:window.boltApi?.planData,onPhase:setPhase,isCurrent:()=>alive.current,
+        useModel,planData:window.boltApi?.planData,completeDataRun:window.boltApi?.completeDataRun,
+        onPhase:setPhase,isCurrent:()=>alive.current,
       });
       if(!alive.current)return;
       setTurns(old=>[...old,{id:old.length?old[old.length-1].id+1:1,question:q,answer}].slice(-12));
@@ -92,7 +117,7 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
       </div>)}
     </div>}
     {error&&<div role="alert" className="lab-error"><Info size={16}/>{error}</div>}
-    {busy&&<p role="status" className="lab-ask-running"><Activity size={15}/> {phase==='planning'?'Interpreting the question from column names and types…':'Reading the local CSV and calculating your answer…'}</p>}
+    {busy&&<p role="status" className="lab-ask-running"><Activity size={15}/> {phase==='planning'?'Interpreting the question from column names and types…':phase==='confirming'?'Confirming the workflow after local calculation…':'Reading the local CSV and calculating your answer…'}</p>}
     <form onSubmit={onSubmit} className="lab-ask-composer">
       <textarea rows={2} value={question} maxLength={400} disabled={busy}
         onChange={event=>setQuestion(event.target.value)}

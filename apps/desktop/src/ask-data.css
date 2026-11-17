@@ -47,3 +47,12 @@
 .lab-ai-choice{display:flex;align-items:center;gap:10px;min-height:44px;margin:16px 0 6px;font-weight:600;cursor:pointer}
 .lab-ai-choice input{width:20px;height:20px;flex:none;accent-color:#3b82f6}
 .lab-ai-choice input:focus-visible{outline:2px solid #fbbf24;outline-offset:4px}
+
+.lab-data-workflow{margin:14px 0;padding:12px 14px;background:#15273E;border:1px solid #36506C;border-radius:8px;color:#BCD0EB;font-size:11px;line-height:1.6}
+.lab-data-workflow-status{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lab-data-workflow-status strong{color:#CBF4E6}
+.lab-data-workflow details{margin-top:6px}
+.lab-data-workflow summary{cursor:pointer;min-height:32px;align-content:center;color:#A7C4E6}
+.lab-data-workflow summary:focus-visible{outline:2px solid #FBBF24;outline-offset:3px}
+.lab-data-workflow ol{padding-left:22px;margin:8px 0}
+.lab-data-workflow details p{color:#A7BEDC;margin:8px 0 0}

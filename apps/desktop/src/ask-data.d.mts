@@ -8,7 +8,7 @@ export type DataAnswer = {
   calculation: string | null;
   evidence: string | null;
   warnings: string[];
-  planning?: {mode:'model'|'local';operation:string;model?:string;usage?:{prompt_tokens:number;completion_tokens:number;cached_tokens:number}};
+  planning?: {workflow?:BoltDataWorkflow;mode:'model'|'local';operation:string;model?:string;usage?:{prompt_tokens:number;completion_tokens:number;cached_tokens:number}};
 };
 export type QuestionPlan = {
   kind: string;

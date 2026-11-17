@@ -35,6 +35,16 @@ function validateDataPlanningRequest(input) {
   return {question:input.question,target:input.target,columns};
 }
 
+function validateDataRunReceipt(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+      || Object.keys(input).sort().join(',') !== 'run_id,status'
+      || typeof input.run_id !== 'string' || !/^[a-f0-9]{32}$/.test(input.run_id)
+      || !['completed','failed','cancelled'].includes(input.status)) {
+    throw new Error('Invalid local workflow receipt');
+  }
+  return {run_id:input.run_id,status:input.status};
+}
+
 function validateRequest(route, options = {}) {
   if (typeof route !== 'string' || route.length > 100) throw new Error('Unsupported BOLT API route');
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid request');
@@ -175,11 +185,11 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
     };
     const doRequest = async (route, opts) => sendRequest(route, validateRequest(route, opts),
       route === '/v1/chat' ? 130000 : 15000);
-    const modelRequest = async (route, data) => {
+    const modelRequest = async (route, data, requestTimeout = 130000) => {
       const result = await sendRequest(route, {
         method:data === undefined?'GET':'POST',
         body:data === undefined?undefined:JSON.stringify(data),
-      }, 130000);
+      }, requestTimeout);
       if (!result.ok) throw new Error(
         result.status === 409 ? 'Save a model connection in Settings first.' :
         result.status === 422 ? 'Invalid model settings. Check endpoint, authentication and model.' :
@@ -197,7 +207,14 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
     }
     if (!health?.ok || health.data.mode !== 'synthetic') throw new Error('BOLT API did not respond to authenticated health check');
     return { port, request: doRequest, stop, child,
-      planData:input => modelRequest('/_desktop/data/plan', validateDataPlanningRequest(input)),
+      planData:async input => modelRequest('/_desktop/data/runs', validateDataPlanningRequest(input)),
+      completeDataRun:async input => {
+        const result = await sendRequest('/_desktop/data/complete', {
+          method:'POST', body:JSON.stringify(validateDataRunReceipt(input)),
+        });
+        if (!result.ok) throw new Error('Local workflow confirmation is unavailable. Start a new question if the run expired.');
+        return result.data;
+      },
       modelStatus:() => modelRequest('/_desktop/model'),
       configureModel:config => modelRequest('/_desktop/model', config),
       testModel:() => modelRequest('/_desktop/model/test', {}),
@@ -209,4 +226,4 @@ async function startBackend(spec, { spawnProcess = spawn, fetchImpl = fetch, tim
   }
 }
 
-module.exports = { validateDataPlanningRequest, validateRequest, backendCommand, readyPort, startBackend };
+module.exports = { validateDataRunReceipt, validateDataPlanningRequest, validateRequest, backendCommand, readyPort, startBackend };
