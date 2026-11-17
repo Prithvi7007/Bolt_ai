@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { constants, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { constants, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -173,6 +173,39 @@ async function shutdown(running) {
   await wait(500);
 }
 
+// Drive the real Windows Save dialog in this disposable CI desktop only.
+function respondToSaveDialog(destination) {
+  assert.equal(process.platform,'win32','Native Save-dialog verification is Windows-only');
+  const literal = value => "'" + value.replace(/'/g,"''") + "'";
+  const keys = destination?.replace(/[+^%~()[\]{}]/g,c => '{' + c + '}');
+  const action = destination ? [
+    "[System.Windows.Forms.SendKeys]::SendWait('%n')",
+    'Start-Sleep -Milliseconds 150',
+    "[System.Windows.Forms.SendKeys]::SendWait('^a')",
+    '[System.Windows.Forms.SendKeys]::SendWait(' + literal(keys) + ')',
+    'Start-Sleep -Milliseconds 150',
+    "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
+  ] : ["[System.Windows.Forms.SendKeys]::SendWait('{ESC}')"];
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    'Add-Type -AssemblyName System.Windows.Forms',
+    '$shell = New-Object -ComObject WScript.Shell',
+    '$active = $false',
+    'for ($attempt = 0; $attempt -lt 60; $attempt++) {',
+    "  if ($shell.AppActivate('Save BOLT analysis')) { $active = $true; break }",
+    '  Start-Sleep -Milliseconds 200',
+    '}',
+    "if (-not $active) { throw 'BOLT Save dialog was not found' }",
+    'Start-Sleep -Milliseconds 300',
+    ...action,
+  ].join('\r\n');
+  const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-STA',
+    '-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{
+    encoding:'utf8',windowsHide:true,timeout:20000,
+  });
+  assert.equal(result.status,0,'Native Save dialog interaction failed: '+(result.stderr||result.error?.message||''));
+}
+
 async function main() {
   const sandbox = mkdtempSync(path.join(tmpdir(), 'bolt-gui-'));
   let running;
@@ -282,6 +315,42 @@ async function main() {
     assert.equal(await first.eval(
       'document.querySelector(".lab-ask-evidence")?.textContent?.includes("3 numeric target rows")'
     ), true, 'Real CSV question contains an evidence-backed row count');
+    // The report generator receives only the calculated answer. Save through the real native dialog.
+    assert.equal(await first.eval(
+      'window.boltApi.saveDataAnswer({format:"html",path:"forbidden"}).then(()=>false,()=>true)'
+    ),true,'Malformed export payloads must fail before opening a dialog');
+    if (process.platform === 'win32') {
+      const htmlExport = path.join(sandbox,'synthetic-answer.html');
+      assert.equal(await first.eval(
+        '(() => { const b=document.querySelector(".lab-ask-turn:last-child .lab-ask-save-csv"); return !!b && !b.disabled; })()'
+      ),true,'Calculated CSV answers expose local export actions');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-report").click()');
+      respondToSaveDialog(htmlExport);
+      await eventually(async()=>existsSync(htmlExport)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent?.includes("Analysis report saved")'
+      ),'HTML analysis report is saved through the native dialog');
+      const reportHtml = readFileSync(htmlExport,'utf8');
+      for(const value of ['350','synthetic-lab.csv','3 numeric target rows','Sum of all valid numeric attendance','not a full extract']) {
+        assert.ok(reportHtml.includes(value),'Exported report retains '+value);
+      }
+      assert.equal(reportHtml.includes('2026-01'),false,'The export excludes raw CSV source rows');
+      const csvExport = path.join(sandbox,'synthetic-answer.csv');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-csv").click()');
+      respondToSaveDialog(csvExport);
+      await eventually(async()=>existsSync(csvExport)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent?.includes("Analysis CSV saved")'
+      ),'CSV analysis results are saved through the native dialog');
+      const reportCsv = readFileSync(csvExport,'utf8');
+      assert.ok(reportCsv.includes('"Section","Label","Value","Detail"'));
+      assert.ok(reportCsv.includes('350')&&reportCsv.includes('3 numeric target rows'));
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-report").click()');
+      respondToSaveDialog();
+      await eventually(async()=>await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Save cancelled."'
+      ),'Cancelling the native dialog is reported without claiming a save');
+      assert.equal(modelRequests.length,0,'Export must not contact the model');
+      console.log('PASS: packaged CSV answer exports HTML and CSV through native Save dialogs; cancellation works');
+    }
     const configured = await first.eval('window.boltApi.modelSettings("save",'+JSON.stringify({
       endpoint:'http://127.0.0.1:'+modelPort+'/v1',model:'synthetic-planner',auth_mode:'none',token:'',timeout_seconds:10,
     })+')');

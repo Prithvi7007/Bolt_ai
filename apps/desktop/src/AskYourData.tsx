@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState, type FormEvent, type KeyboardEvent} from 'react';
-import {Activity, ArrowUp, CheckCircle2, Database, FileText, Info,
+import {Activity, ArrowUp, CheckCircle2, Database, Download, FileText, Info,
   MessageSquareText, ShieldCheck, Sparkles} from 'lucide-react';
 import {suggestedDataQuestions, type DataAnswer} from './ask-data.mjs';
 import {answerWithAIPlanning} from './ai-data.mjs';
@@ -31,7 +31,41 @@ function WorkflowCard({workflow}:{workflow:BoltDataWorkflow}) {
   </div>;
 }
 
-function AnswerCard({answer}: {answer:DataAnswer}) {
+function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;question:string;sourceName:string;target:string}) {
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
+  const [saving,setSaving]=useState(false);
+  const [notice,setNotice]=useState('');
+  const [saveError,setSaveError]=useState('');
+  async function save(format:'html'|'csv') {
+    if(saving||!window.boltApi?.saveDataAnswer)return;
+    setSaving(true);setNotice('');setSaveError('');
+    const {title,table,calculation,evidence,warnings}=answer;
+    try {
+      const outcome=await window.boltApi.saveDataAnswer({
+        format,sourceName,target,question,interpretation:answer.planning?.mode||'local',
+        result:{title,answer:answer.answer,table,calculation,evidence,warnings},
+      });
+      if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':'Analysis CSV saved.'):'Save cancelled.');
+    } catch {
+      if(alive.current)setSaveError('Could not save this analysis. Choose a writable folder and try again.');
+    } finally {
+      if(alive.current)setSaving(false);
+    }
+  }
+  if(answer.kind!=='answered'||!window.boltApi?.saveDataAnswer)return null;
+  return <div className="lab-ask-exports">
+    <div className="lab-ask-export-actions" aria-label="Save this CSV analysis">
+      <button type="button" className="lab-ask-save-report" disabled={saving} onClick={()=>void save('html')}><FileText size={15}/> Save report</button>
+      <button type="button" className="lab-ask-save-csv" disabled={saving} onClick={()=>void save('csv')}><Download size={15}/> Export CSV</button>
+      <span className="lab-ask-export-status" role="status">{saving?'Choose where to save…':notice}</span>
+    </div>
+    <p>Saves the displayed answer, table, calculation and caveats. Reports use HTML; CSV values keep their display formatting.</p>
+    {saveError&&<p role="alert" className="lab-ask-export-error">{saveError}</p>}
+  </div>;
+}
+
+function AnswerCard({answer,question,sourceName,target}: {answer:DataAnswer;question:string;sourceName:string;target:string}) {
   return <article className={'lab-ask-answer '+(answer.kind==='unsupported'?'lab-ask-unsupported':'')} aria-label="Calculated dataset answer">
     <div className="lab-ask-answer-title">
       {answer.kind==='answered'?<CheckCircle2 size={17}/>:<Info size={17}/>}
@@ -57,6 +91,7 @@ function AnswerCard({answer}: {answer:DataAnswer}) {
       <summary>Methodology and caveats ({answer.warnings.length})</summary>
       <ul>{answer.warnings.map((item,index)=><li key={index}>{item}</li>)}</ul>
     </details>}
+    <AnswerExports answer={answer} question={question} sourceName={sourceName} target={target}/>
   </article>;
 }
 
@@ -113,7 +148,7 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
     {turns.length>0&&<div className="lab-ask-transcript" aria-label="Recent local analysis questions">
       {turns.map(turn=><div className="lab-ask-turn" key={turn.id}>
         <p className="lab-ask-user">{turn.question}</p>
-        <AnswerCard answer={turn.answer}/>
+        <AnswerCard answer={turn.answer} question={turn.question} sourceName={file.name} target={target}/>
       </div>)}
     </div>}
     {error&&<div role="alert" className="lab-error"><Info size={16}/>{error}</div>}
