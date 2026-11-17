@@ -27,7 +27,7 @@
 .lab-ask-proof svg{flex-shrink:0;margin-top:1px;color:#8CB6FF}
 .lab-ask-proof b{display:block;color:#E1EDFD;margin-bottom:2px}
 .lab-ask-proof span{display:block}
-.lab-ask-evidence{display:flex;align-items:flex-start;gap:8px;color:#9AB2D2;font-size:10px;line-height:1.5;margin:12px 0 0}
+.lab-ask-evidence,.lab-ask-planning{display:flex;align-items:flex-start;gap:8px;color:#9AB2D2;font-size:10px;line-height:1.5;margin:12px 0 0}
 .lab-ask-evidence svg{flex-shrink:0}
 .lab-ask-caveats{margin-top:13px;color:#AABDD7;font-size:11px}
 .lab-ask-caveats summary{cursor:pointer;font-size:11px}

@@ -14,7 +14,7 @@ function AnswerCard({answer}: {answer:DataAnswer}) {
       {answer.kind==='answered'?<CheckCircle2 size={17}/>:<Info size={17}/>}
       <strong>{answer.title}</strong>
     </div>
-    {answer.planning&&<p className="lab-ask-evidence">{answer.planning.mode==='model'?
+    {answer.planning&&<p className="lab-ask-planning">{answer.planning.mode==='model'?
       'AI interpretation: '+answer.planning.operation+' · '+(answer.kind==='answered'?'calculated on-device':'no calculation executed')+
       ' · '+((answer.planning.usage?.prompt_tokens||0)+(answer.planning.usage?.completion_tokens||0))+' reported tokens':
       'Local interpretation · no model call'}</p>}
