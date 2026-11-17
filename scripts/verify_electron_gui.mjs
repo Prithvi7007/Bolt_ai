@@ -422,6 +422,59 @@ async function main() {
       console.log('PASS: packaged CSV chart uses actual aggregates, exposes full data, saves SVG/HTML, and retains text-slide PowerPoint export');
     }
     assert.equal(modelRequests.length,0,'Chart calculation and export must not call the model');
+    async function askLocal(question) {
+      const before=await first.eval('document.querySelectorAll(".lab-ask-turn").length');
+      await first.eval('document.querySelector(".lab-ask-composer textarea").focus()');
+      await first.send('Input.insertText',{text:question});
+      await eventually(async()=>await first.eval(
+        '!document.querySelector(".lab-ask-composer button")?.disabled'
+      ),'Local follow-up is ready');
+      await first.eval('document.querySelector(".lab-ask-composer button").click()');
+      await eventually(async()=>await first.eval(
+        'document.querySelectorAll(".lab-ask-turn").length > '+before
+      ),'Local answer appears for '+question);
+    }
+    await askLocal('And average?');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-ask-context-resolution")?.textContent?.includes("Mean attendance by month") && document.querySelector(".lab-ask-context-scope")?.textContent?.includes("Mean attendance by month") && document.querySelectorAll(".lab-ask-turn:last-child .lab-answer-chart circle").length === 3'
+    ),true,'Follow-up mean retains the observed-date scope and chart');
+    await first.eval('document.querySelector(".lab-ask-clear-context").click()');
+    await eventually(async()=>await first.eval('!document.querySelector(".lab-ask-context")'),'Context can be cleared explicitly');
+    await askLocal('And total?');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("no previous calculation")'
+    ),true,'A follow-up without context clarifies instead of silently changing scope');
+    await askLocal('Total attendance');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-context-scope")?.textContent === "Total attendance" && document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("350")'
+    ),true,'A fresh full question establishes overall scope');
+    await first.eval(
+      '(() => { const input=document.querySelector("#bolt-csv-import"); const csv=["month,attendance","2026-01,100","2026-02,120","2026-03,130"].join(String.fromCharCode(10)); const transfer=new DataTransfer(); transfer.items.add(new File([csv],"synthetic-lab.csv",{type:"text/csv"})); input.files=transfer.files; input.dispatchEvent(new Event("change",{bubbles:true})); })()'
+    );
+    await eventually(async()=>await first.eval(
+      'document.querySelector("#bolt-target")?.value === "attendance" && !document.querySelector(".lab-ask-composer")'
+    ),'Replacing the source clears target approval and its prior scope');
+    await first.eval('document.querySelector(".lab-target-control button").click()');
+    await eventually(async()=>await first.eval(
+      '!!document.querySelector(".lab-ask-composer") && !document.querySelector(".lab-ask-context") && document.querySelectorAll(".lab-ask-turn").length === 0'
+    ),'The replacement dataset begins without old calculation context');
+    await askLocal('Total attendance');
+    await first.eval(
+      '(() => { const select=document.querySelector("#bolt-target"); select.value=""; select.dispatchEvent(new Event("change",{bubbles:true})); })()'
+    );
+    await eventually(async()=>await first.eval('!document.querySelector(".lab-ask-composer")'),'Clearing the target removes its calculation context');
+    await first.eval(
+      '(() => { const select=document.querySelector("#bolt-target"); select.value="attendance"; select.dispatchEvent(new Event("change",{bubbles:true})); })()'
+    );
+    await eventually(async()=>await first.eval(
+      'document.querySelector("#bolt-target")?.value === "attendance" && document.querySelector(".lab-target-control button")?.disabled === false'
+    ),'The selected target is ready for approval');
+    await first.eval('document.querySelector(".lab-target-control button").click()');
+    await eventually(async()=>await first.eval(
+      '!!document.querySelector(".lab-ask-composer") && !document.querySelector(".lab-ask-context") && document.querySelectorAll(".lab-ask-turn").length === 0'
+    ),'Reapproving a target creates fresh question context');
+    assert.equal(modelRequests.length,0,'Context resolution and reset make no model calls');
+    console.log('PASS: packaged CSV follow-ups retain scope, clear explicitly, clarify without context, and reset on source/target changes');
     const configured = await first.eval('window.boltApi.modelSettings("save",'+JSON.stringify({
       endpoint:'http://127.0.0.1:'+modelPort+'/v1',model:'synthetic-planner',auth_mode:'none',token:'',timeout_seconds:10,
     })+')');

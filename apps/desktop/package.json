@@ -10,7 +10,7 @@
     "web": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build && node scripts/check-dist.mjs",
     "start": "electron .",
-    "verify:source": "node --test electron/navigation.test.cjs electron/runtime.test.cjs electron/model-settings.test.cjs electron/data-answer-export.test.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --test src/dataset-understanding.test.mjs src/local-analysis.test.mjs src/ask-data.test.mjs src/ai-data.test.mjs shared/data-chart.test.mjs && node --check ../../scripts/verify_electron_gui.mjs",
+    "verify:source": "node --test electron/navigation.test.cjs electron/runtime.test.cjs electron/model-settings.test.cjs electron/data-answer-export.test.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --test src/dataset-understanding.test.mjs src/local-analysis.test.mjs src/ask-data.test.mjs src/ai-data.test.mjs src/data-followups.test.mjs shared/data-chart.test.mjs && node --check ../../scripts/verify_electron_gui.mjs",
     "backend:build": "python ../../scripts/build_backend.py",
     "backend:check": "node scripts/check-backend.mjs",
     "pack:dir": "npm run build && npm run backend:build && npm run backend:check && electron-builder --dir --publish never",

@@ -58,7 +58,7 @@ export function suggestedDataQuestions(profile, target) {
   return prompts;
 }
 
-export function planDataQuestion(question, profile, approvedTarget) {
+function questionGuard(question, profile, approvedTarget) {
   if (!profile || typeof approvedTarget !== 'string'
       || !profile.columns.some(col => col.name === approvedTarget && col.type === 'numeric')) {
     return {kind:'unsupported', error:'Approve a numeric target in the Data Lab first'};
@@ -88,6 +88,13 @@ export function planDataQuestion(question, profile, approvedTarget) {
   if (REQUESTED_GRAIN.test(q)) {
     return {kind:'unsupported', error:'Calendar reaggregation is not available yet. Ask for a trend over time to summarize the observed date keys in the CSV.'};
   }
+  return null;
+}
+
+export function planDataQuestion(question, profile, approvedTarget) {
+  const blocked=questionGuard(question,profile,approvedTarget);
+  if(blocked)return blocked;
+  const q=question.trim();
   if (QUALITY.test(q)) return {kind:'quality', target: approvedTarget};
   const relationship = RELATIONSHIP.test(q);
   const mentions = metricChoice(q,profile,approvedTarget);
@@ -212,6 +219,79 @@ export function validateDataPlan(input, profile, approvedTarget) {
   }
   if (Object.keys(plan).some(key => !allowed.includes(key))) throw new Error('Unsupported fields in calculation plan');
   return plan;
+}
+
+
+/** Display schema-only scope; never include calculated values in reusable context. */
+export function describeDataPlan(plan) {
+  if(!plan||plan.kind==='unsupported')return 'No active calculation';
+  const aggregate=plan.aggregation==='mean'?'Mean':'Total';
+  switch(plan.kind){
+    case 'group':return (plan.ranking?(plan.ranking==='top'?'Top ':'Bottom ')+plan.limit+' · ':'')+aggregate+' '+plan.target+' by '+plan.dimension;
+    case 'timeline':return aggregate+' '+plan.target+' by '+plan.dateColumn+' (observed dates)';
+    case 'sum':return 'Total '+plan.target;
+    case 'mean':return 'Mean '+plan.target;
+    case 'count':return 'Valid '+plan.target+' rows';
+    case 'range':return 'Range of '+plan.target;
+    case 'overview':return 'Overview of '+plan.target;
+    case 'quality':return 'Data quality for '+plan.target;
+    case 'correlation':return 'Correlation of '+plan.target+(plan.predictor?' with '+plan.predictor:' with checked numeric columns');
+    default:return 'No active calculation';
+  }
+}
+function clarification(message) {return {plan:{kind:'unsupported',error:message},contextUsed:false};}
+const sameName=(a,b)=>a.toLowerCase().replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim()===b.toLowerCase().replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+
+export function resolveDataQuestionPlan(question,profile,approvedTarget,previousPlan=null) {
+  if(typeof question!=='string')return {plan:planDataQuestion(question,profile,approvedTarget),contextUsed:false};
+  const normalized=question.trim().replace(/[?!.]+$/g,'').trim();
+  const repeat=/^(?:again|repeat\s+that|same\s+calculation)$/i.test(normalized);
+  const cue=/^(?:and|also|now|instead|what about|how about)\s+(?:the\s+)?(.+)$/i.exec(normalized);
+  if(!repeat&&!cue)return {plan:planDataQuestion(question,profile,approvedTarget),contextUsed:false};
+  const blocked=questionGuard(question,profile,approvedTarget);
+  if(blocked)return {plan:blocked,contextUsed:false};
+  const tail=cue?.[1]||'';
+  const fresh=planDataQuestion(question,profile,approvedTarget);
+  if(!RELATIONSHIP.test(question)&&metricChoice(question,profile,approvedTarget).length){
+    return clarification('Another numeric field was mentioned. Approve that field as the target first, or explicitly ask for its correlation with '+approvedTarget+'.');
+  }
+  const explicit=containsColumn(question,approvedTarget)&&(fresh.kind==='group'||fresh.kind==='timeline'||
+    fresh.kind==='correlation'||fresh.kind==='quality'||/^(?:what is|what are|show|calculate|summari[sz]e|give)\b/i.test(tail));
+  if(fresh.kind!=='unsupported'&&explicit)return {plan:fresh,contextUsed:false};
+  if(!previousPlan)return clarification('There is no previous calculation to use. Ask a full question about the approved target first.');
+  let prior;
+  try{prior=validateDataPlan(previousPlan,profile,approvedTarget);}catch{return clarification('The previous calculation no longer matches this dataset and target. Ask a full question.');}
+  if(prior.kind==='unsupported'||prior.kind==='quality')return clarification('There is no reusable numeric calculation. Ask a full question about the approved target.');
+  let plan;
+  if(repeat)plan=prior;
+  else {
+    const aggregate=/^(total|sum|average|mean)(?:\s+(.+))?$/i.exec(tail);
+    const dimension=/^by\s+(.+)$/i.exec(tail);
+    const ranking=/^(top|bottom)\s+(\d{1,2})(?:\s+(?:ones|groups|categories))?$/i.exec(tail);
+    if(aggregate&&(!aggregate[2]||sameName(aggregate[2],approvedTarget))){
+      const aggregation=/^(average|mean)$/i.test(aggregate[1])?'mean':'sum';
+      if(prior.kind==='group'||prior.kind==='timeline')plan={...prior,aggregation};
+      else if(['sum','mean','overview','count','range'].includes(prior.kind))plan={kind:aggregation,target:approvedTarget};
+      else return clarification('Specify the target calculation explicitly after a quality or correlation question.');
+    }else if(dimension){
+      const categorical=profile.columns.filter(c=>c.type==='categorical');
+      const exact=categorical.filter(c=>c.name.toLowerCase()===dimension[1].toLowerCase().trim());
+      const matches=exact.length?exact:categorical.filter(c=>sameName(dimension[1],c.name));
+      if(matches.length>1)return clarification('That breakdown matches more than one column. Use an exact CSV column name.');
+      const column=matches[0];
+      if(!column)return clarification('Choose a categorical column from this CSV for the breakdown.');
+      if(prior.kind==='group')plan={...prior,dimension:column.name};
+      else if(prior.kind==='sum'||prior.kind==='mean')plan={kind:'group',target:approvedTarget,dimension:column.name,
+        aggregation:prior.kind,limit:5};
+      else return clarification('Ask for a total or mean before changing the categorical breakdown.');
+    }else if(ranking||/^(highest|lowest)$/i.test(tail)){
+      if(prior.kind!=='group')return clarification('A top or bottom follow-up needs a previous categorical breakdown.');
+      const limit=ranking?Number(ranking[2]):1;
+      if(limit<1||limit>10)return clarification('Choose a top or bottom count from 1 to 10.');
+      plan={...prior,ranking:ranking?ranking[1].toLowerCase():/^highest$/i.test(tail)?'top':'bottom',limit};
+    }else return clarification('That follow-up is ambiguous. Ask for a total, mean, categorical breakdown or top/bottom count explicitly.');
+  }
+  return {plan:validateDataPlan(plan,profile,approvedTarget),contextUsed:true};
 }
 
 function attachChart(answer,chart) {
