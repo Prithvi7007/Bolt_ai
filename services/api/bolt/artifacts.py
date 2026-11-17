@@ -147,7 +147,7 @@ def _package_files(slides: list[tuple[str, str]], created: str) -> dict[str, str
         '<p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" '
         'accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" folHlink="folHlink" '
         'hlink="hlink" tx1="dk1" tx2="dk2"/>'
-        '<p:sldLayoutIdLst><p:sldLayoutId id="1" r:id="rId1"/></p:sldLayoutIdLst>'
+        '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>'
         '<p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>'
     )
     master_rels = (
@@ -184,9 +184,20 @@ def _package_files(slides: list[tuple[str, str]], created: str) -> dict[str, str
         '<a:accent3><a:srgbClr val="0F766E"/></a:accent3><a:accent4><a:srgbClr val="7C3AED"/></a:accent4>'
         '<a:accent5><a:srgbClr val="0369A1"/></a:accent5><a:accent6><a:srgbClr val="BE123C"/></a:accent6>'
         '<a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink>'
-        '</a:clrScheme><a:fontScheme name="BOLT"><a:majorFont><a:latin typeface="Aptos Display"/></a:majorFont>'
-        '<a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme>'
-        '<a:fmtScheme name="BOLT"><a:fillStyleLst/><a:lnStyleLst/><a:effectStyleLst/><a:bgFillStyleLst/></a:fmtScheme>'
+        '</a:clrScheme><a:fontScheme name="BOLT"><a:majorFont><a:latin typeface="Aptos Display"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>'
+        '<a:minorFont><a:latin typeface="Aptos"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme>'
+        '<a:fmtScheme name="BOLT"><a:fillStyleLst>'
+        + '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>' * 3
+        + '</a:fillStyleLst><a:lnStyleLst>'
+        + ''.join(
+            f'<a:ln w="{width}"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill>'
+            '<a:prstDash val="solid"/></a:ln>' for width in (12700, 25400, 38100)
+        )
+        + '</a:lnStyleLst><a:effectStyleLst>'
+        + '<a:effectStyle><a:effectLst/></a:effectStyle>' * 3
+        + '</a:effectStyleLst><a:bgFillStyleLst>'
+        + '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>' * 3
+        + '</a:bgFillStyleLst></a:fmtScheme>'
         '</a:themeElements></a:theme>'
     )
     core = (

@@ -147,3 +147,29 @@ def test_unicode_line_separators_obey_the_actual_slide_paragraph_budget(separato
         root = ET.fromstring(archive.read(name))
         body = root.findall(".//p:sp/p:txBody", namespaces)[-1]
         assert len(body.findall("a:p", namespaces)) <= 16
+
+
+@pytest.mark.parametrize("kind", ["local", "stored"])
+def test_powerpoint_theme_and_layout_have_required_open_xml_structure(kind, tmp_path):
+    # DrawingML requires three style entries and Latin/East Asian/complex-script font entries.
+    if kind == "local":
+        archive, _, _ = unpack(build_data_presentation(DataPresentationRequest.model_validate(SNAPSHOT)))
+    else:
+        from bolt.artifacts import PresentationBuilder
+        artifact = PresentationBuilder(tmp_path).build(title="Synthetic brief", owner_id="test", analyses=[{
+            "answer": "Synthetic result", "evidence": {"query_id":"synthetic-1","source":"synthetic"},
+        }])
+        archive = zipfile.ZipFile(artifact.path)
+    namespaces = {"a":"http://schemas.openxmlformats.org/drawingml/2006/main",
+                  "p":"http://schemas.openxmlformats.org/presentationml/2006/main"}
+    theme = ET.fromstring(archive.read("ppt/theme/theme1.xml"))
+    for name in ["fillStyleLst","lnStyleLst","effectStyleLst","bgFillStyleLst"]:
+        styles = theme.find(".//a:"+name, namespaces)
+        assert styles is not None and len(styles) >= 3, name
+    for collection in ["majorFont","minorFont"]:
+        fonts = theme.find(".//a:"+collection, namespaces)
+        for font in ["latin","ea","cs"]:
+            assert fonts.find("a:"+font, namespaces) is not None
+    master = ET.fromstring(archive.read("ppt/slideMasters/slideMaster1.xml"))
+    for layout in master.findall("p:sldLayoutIdLst/p:sldLayoutId", namespaces):
+        assert 2147483648 <= int(layout.attrib["id"]) <= 4294967295
