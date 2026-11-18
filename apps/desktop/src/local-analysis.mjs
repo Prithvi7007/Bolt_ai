@@ -47,6 +47,35 @@ function dateKey(raw) {
   return m[3] ? m[1] + '-' + m[2] + '-' + m[3] : m[1] + '-' + m[2];
 }
 
+
+export const DATE_FILTER_CONVENTION='Month-only source keys use the first day of that month; monthly aggregates are not split into days.';
+export function validateDateFilter(input,profile=null) {
+  if(input===null||input===undefined)return null;
+  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).sort().join(',')!=='column,from,to'
+    ||typeof input.column!=='string'||!input.column.trim()||input.column.length>160){
+    throw new Error('Invalid local date filter');
+  }
+  for(const bound of [input.from,input.to]){
+    if(bound!==null&&(typeof bound!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(bound)||dateKey(bound)!==bound)){
+      throw new Error('Date filter bounds must be real ISO dates from 1900 through 2200');
+    }
+  }
+  if(input.from===null&&input.to===null)throw new Error('A date filter needs at least one bound');
+  if(input.from&&input.to&&input.from>input.to)throw new Error('Date filter start must be on or before end');
+  if(profile&&!profile.columns.some(c=>c.name===input.column&&c.type==='date')){
+    throw new Error('The date filter must use an existing date column');
+  }
+  return {column:input.column,from:input.from,to:input.to};
+}
+export function describeDateFilter(filter) {
+  return filter?filter.column+': '+(filter.from?'from '+filter.from:'from the first observed key')+
+    (filter.to?' through '+filter.to:' through the last observed key')+' (inclusive date keys)':'';
+}
+export function describeFilterScope(categoryFilter,dateFilter) {
+  if(!categoryFilter&&!dateFilter)return 'All accepted CSV rows';
+  return [categoryFilter?describeCategoryFilter(categoryFilter):'',describeDateFilter(dateFilter)].filter(Boolean).join(' · ');
+}
+
 function newPair(name, index) {
   return {name, index, n: 0, meanX: 0, meanY: 0, m2X: 0, m2Y: 0, covariance: 0};
 }
@@ -66,13 +95,15 @@ function collector(options) {
     throw new Error('Approve a numeric target before running analysis');
   }
   const categoryFilter = validateCategoryFilter(options.categoryFilter);
+  const dateFilter = validateDateFilter(options.dateFilter);
+  const filtered = Boolean(categoryFilter||dateFilter);
   const target = options.target;
   const dimension = options.dimension || null;
   const dateColumn = options.dateColumn || null;
   const predictor = options.predictor || null;
   if (target === dimension || target === dateColumn) throw new Error('Target must be separate from date and group columns');
-  let targetIndex = -1, dimensionIndex = -1, dateIndex = -1, filterIndex = -1;
-  let matchedRows = 0, missingness = null;
+  let targetIndex = -1, dimensionIndex = -1, dateIndex = -1, filterIndex = -1, rangeDateIndex = -1;
+  let matchedRows = 0, categoryMatchedRows = 0, invalidFilterDateRows = 0, missingness = null;
   let pairs = null;
   let retainedPredictorCount = 0;
   let predictorLimited = false;
@@ -87,7 +118,9 @@ function collector(options) {
       targetIndex = headers.indexOf(target);
       filterIndex = categoryFilter ? headers.indexOf(categoryFilter.column) : -1;
       if(categoryFilter&&filterIndex<0)throw new Error('Filter column is not present in the dataset');
-      if(categoryFilter)missingness = Array(headers.length).fill(0);
+      rangeDateIndex = dateFilter ? headers.indexOf(dateFilter.column) : -1;
+      if(dateFilter&&rangeDateIndex<0)throw new Error('Date filter column is not present in the dataset');
+      if(filtered)missingness = Array(headers.length).fill(0);
       dimensionIndex = dimension === null ? -1 : headers.indexOf(dimension);
       dateIndex = dateColumn === null ? -1 : headers.indexOf(dateColumn);
       if (targetIndex < 0) throw new Error('Target column is not present in the dataset');
@@ -100,6 +133,13 @@ function collector(options) {
       pairs = predictorHeaders.slice(0, PREDICTOR_LIMIT).map(({name, index}) => newPair(name, index));
     }
     if(categoryFilter&&values[filterIndex].trim()!==categoryFilter.value)return;
+    categoryMatchedRows++;
+    if(dateFilter){
+      const key=dateKey(values[rangeDateIndex]);
+      if(key===null){invalidFilterDateRows++;return;}
+      const day=key.length===7?key+'-01':key;
+      if((dateFilter.from&&day<dateFilter.from)||(dateFilter.to&&day>dateFilter.to))return;
+    }
     matchedRows++;
     if(missingness)values.forEach((value,i)=>{if(NULLS.has(value.trim().toLowerCase()))missingness[i]++;});
     const y = numeric(values[targetIndex]);
@@ -150,6 +190,7 @@ function collector(options) {
 
   function finish(profile) {
     validateCategoryFilter(categoryFilter,profile);
+    validateDateFilter(dateFilter,profile);
     const targetProfile = profile.columns.find(col => col.name === target);
     if (!targetProfile || targetProfile.type !== 'numeric') {
       throw new Error('Approved target must be a consistently numeric column');
@@ -180,8 +221,11 @@ function collector(options) {
 
     const warnings = [];
     if (profile.rejectedRows) warnings.push(profile.rejectedRows + ' malformed CSV records were excluded');
-    if(categoryFilter)warnings.push('Local category filter: '+describeCategoryFilter(categoryFilter)+'. '+matchedRows+' of '+profile.rowCount+' accepted rows matched; '+(profile.rowCount-matchedRows)+' rows excluded by the filter.');
-    if (matchedRows - valid) warnings.push((matchedRows - valid) + (categoryFilter?' matching':' accepted')+' CSV rows had missing or nonnumeric target values');
+    const coverage=matchedRows+' of '+profile.rowCount+' accepted rows matched all active filters; '+(profile.rowCount-matchedRows)+' rows excluded by filters.';
+    if(categoryFilter)warnings.push('Local category filter: '+describeCategoryFilter(categoryFilter)+'. '+coverage);
+    if(dateFilter)warnings.push('Local date filter: '+describeDateFilter(dateFilter)+'. '+DATE_FILTER_CONVENTION+' '+coverage);
+    if(dateFilter)warnings.push('Filter exclusions: '+(profile.rowCount-categoryMatchedRows)+' category exclusions; '+(categoryMatchedRows-matchedRows)+' date-filter exclusions, including '+invalidFilterDateRows+' missing or invalid date keys after category matching. All exclusions occur before target statistics.');
+    if (matchedRows - valid) warnings.push((matchedRows - valid) + (filtered?' matching':' accepted')+' CSV rows had missing or nonnumeric target values');
     if (valid < 3) warnings.push('Very few valid target values; interpret patterns cautiously');
     if (valid && min === max) warnings.push('Target has no variation; correlations are undefined');
     const excludedDateRows = dateColumn ? valid - datedTargetRows : 0;
@@ -194,8 +238,9 @@ function collector(options) {
     warnings.push('Correlation is descriptive, not evidence of causality; no model was trained');
     return {
       target, dimension, dateColumn, scannedRows: profile.rowCount, validRows: valid,
-      categoryFilter, matchedRows, excludedByFilterRows: profile.rowCount-matchedRows,
-      ...(categoryFilter?{missingness:profile.columns.map((col,i)=>({name:col.name,missing:missingness?.[i]||0}))}:{}),
+      categoryFilter, dateFilter, matchedRows, excludedByFilterRows: profile.rowCount-matchedRows,
+      excludedByCategoryRows:profile.rowCount-categoryMatchedRows,excludedByDateFilterRows:categoryMatchedRows-matchedRows,invalidFilterDateRows,
+      ...(filtered?{missingness:profile.columns.map((col,i)=>({name:col.name,missing:missingness?.[i]||0}))}:{}),
       excludedTargetRows: matchedRows - valid,
       total: valid ? sum : null, mean: valid ? mean : null,
       standardDeviation: valid > 1 ? Math.sqrt(m2 / (valid - 1)) : null,

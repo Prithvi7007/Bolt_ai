@@ -555,6 +555,88 @@ async function main() {
     ),true,'Source replacement clears the active category filter');
     assert.equal(modelRequests.length,0,'Category matching, calculations and exports do not call the model');
     console.log('PASS: packaged category filter applies to analysis, answers and follow-ups; saved reports retain scope; clearing/source replacement reset results');
+    async function setDateValue(selector,value) {
+      await first.eval('(() => { const input=document.querySelector('+JSON.stringify(selector)+'); const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; setter.call(input,'+JSON.stringify(value)+'); input.dispatchEvent(new Event("input",{bubbles:true})); input.dispatchEvent(new Event("change",{bubbles:true})); })()');
+    }
+    async function draftDateRange(from,to) {
+      await first.eval('(() => { const input=document.querySelector("#bolt-date-filter-column"); input.value="month"; input.dispatchEvent(new Event("change",{bubbles:true})); })()');
+      await eventually(async()=>await first.eval('document.querySelector("#bolt-date-filter-from")?.disabled === false'),'Date range controls are ready');
+      await setDateValue('#bolt-date-filter-from',from);
+      await setDateValue('#bolt-date-filter-to',to);
+      await eventually(async()=>await first.eval('document.querySelector(".lab-filter-apply")?.disabled === false'),'A bounded date range can be applied');
+    }
+    await draftDateRange('2026-02-01','2026-03-31');
+    await first.eval('document.querySelector(".lab-filter-apply").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-filter-scope")?.textContent?.includes("2026-02-01") && document.querySelector(".lab-filter-scope")?.textContent?.includes("2026-03-31") && document.querySelectorAll(".lab-ask-turn").length === 0'
+    ),'A date-only range establishes a new local calculation scope');
+    await first.eval('document.querySelector(".lab-analyze-button").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-analysis-provenance")?.textContent?.includes("2 matching rows / 3 accepted") && document.querySelector(".lab-analysis-kpis")?.textContent?.includes("250")'
+    ),'Local analysis applies the date range before calculating totals');
+    await askLocal('Total attendance');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("250") && document.querySelector(".lab-ask-turn:last-child .lab-ask-evidence")?.textContent?.includes("2 matching rows / 3 accepted")'
+    ),true,'Date-only questions use matching records');
+    await askLocal('And average?');
+    assert.equal(await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("125")'),true,'Date-filtered follow-ups use a fresh matching-row mean');
+    await askLocal('Show attendance over time');
+    assert.equal(await first.eval('document.querySelectorAll(".lab-ask-turn:last-child .lab-answer-chart circle").length'),2,'A date-range chart contains only retained matching keys');
+    if(process.platform==='win32'){
+      const datedReport=path.join(sandbox,'synthetic-date-range.html');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-report").click()');
+      respondToSaveDialog(datedReport);
+      await eventually(async()=>existsSync(datedReport)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Analysis report saved."'
+      ),'A date-range report saves through the native dialog');
+      const html=readFileSync(datedReport,'utf8');
+      for(const text of ['2026-02-01','2026-03-31','first day','2 matching rows / 3 accepted','120','130'])assert.ok(html.includes(text),'Date-range report retains '+text);
+    }
+    const beforeInvalid=await first.eval('document.querySelectorAll(".lab-ask-turn").length');
+    await setDateValue('#bolt-date-filter-to','2026-01-31');
+    await first.eval('document.querySelector(".lab-filter-apply").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-filter-panel .lab-error")?.textContent?.includes("start must be on or before end")'
+    ),'A reversed date range reports an explicit validation error');
+    assert.equal(await first.eval('document.querySelectorAll(".lab-ask-turn").length'),beforeInvalid,'An invalid draft keeps the prior answer scope');
+    assert.equal(await first.eval('document.querySelector(".lab-filter-scope")?.textContent?.includes("2026-03-31")'),true,'Invalid draft bounds do not replace the applied range');
+    await setDateValue('#bolt-date-filter-to','2026-03-31');
+    await first.eval('document.querySelector(".lab-filter-apply").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelectorAll(".lab-ask-turn").length === 0 && !document.querySelector(".lab-analysis-results") && !document.querySelector(".lab-ask-context")'
+    ),'Identical date-range reapplication resets all previous calculations');
+    await first.eval('document.querySelector(".lab-filter-clear").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-filter-scope")?.textContent === "All accepted CSV rows" && !document.querySelector(".lab-filter-clear")'
+    ),'Clear filter removes both category and date constraints');
+    await askLocal('Total attendance');
+    assert.equal(await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("350")'),true,'Clearing a date filter restores the complete source total');
+    await replaceLocalSource('month,region,attendance\n2026-01,East,100\n2026-01,East,120\n2026-02,East,130\n2026-01,West,300\n2026-02,West,400\n2026-03,West,500');
+    await applyEastFilter();
+    await draftDateRange('2026-02-01','2026-02-28');
+    await first.eval('document.querySelector(".lab-filter-apply").click()');
+    await eventually(async()=>await first.eval(
+      'document.querySelector(".lab-filter-scope")?.textContent?.includes("East") && document.querySelector(".lab-filter-scope")?.textContent?.includes("2026-02-28")'
+    ),'Category and date constraints apply as an intersection');
+    await askLocal('Total attendance');
+    assert.equal(await first.eval(
+      'document.querySelector(".lab-ask-turn:last-child .lab-ask-primary")?.textContent?.includes("130") && document.querySelector(".lab-ask-turn:last-child .lab-ask-evidence")?.textContent?.includes("1 matching rows / 6 accepted")'
+    ),true,'The combined scope retains only East February attendance');
+    await first.eval('(() => { const input=document.querySelector("#bolt-target"); input.value=""; input.dispatchEvent(new Event("change",{bubbles:true})); })()');
+    await eventually(async()=>await first.eval('!document.querySelector(".lab-ask-composer")'),'Target changes remove the former filtered question scope');
+    await first.eval('(() => { const input=document.querySelector("#bolt-target"); input.value="attendance"; input.dispatchEvent(new Event("change",{bubbles:true})); })()');
+    await eventually(async()=>await first.eval('document.querySelector(".lab-target-control button")?.disabled === false'),'The target can be approved again');
+    await first.eval('document.querySelector(".lab-target-control button").click()');
+    await eventually(async()=>await first.eval(
+      '!!document.querySelector(".lab-ask-composer") && document.querySelector(".lab-filter-scope")?.textContent === "All accepted CSV rows"'
+    ),'Reapproving a target clears both former filters');
+    await draftDateRange('2026-02-01','2026-02-28');
+    await first.eval('document.querySelector(".lab-filter-apply").click()');
+    await eventually(async()=>await first.eval('!!document.querySelector(".lab-filter-clear")'),'Date filter is active before source replacement');
+    await replaceLocalSource('month,attendance\n2026-01,100\n2026-02,120\n2026-03,130');
+    assert.equal(await first.eval('document.querySelector(".lab-filter-scope")?.textContent === "All accepted CSV rows" && !document.querySelector(".lab-filter-clear")'),true,'Source replacement clears the prior date range');
+    assert.equal(modelRequests.length,0,'Date filtering, report generation and resets make no model calls');
+    console.log('PASS: packaged date ranges filter analysis, questions, follow-ups and charts; reports retain convention; invalid/reapply/clear/target/source resets work');
     const configured = await first.eval('window.boltApi.modelSettings("save",'+JSON.stringify({
       endpoint:'http://127.0.0.1:'+modelPort+'/v1',model:'synthetic-planner',auth_mode:'none',token:'',timeout_seconds:10,
     })+')');

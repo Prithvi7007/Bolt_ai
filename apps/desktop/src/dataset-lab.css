@@ -22,3 +22,10 @@
 .lab-filter-clear{flex-shrink:0}
 .lab-ask-active-filter{font-size:12px;line-height:1.7;overflow-wrap:anywhere;color:#C4E5F8;padding:12px 14px;border:1px solid #3D5B7D;border-radius:8px;background:#19334D}
 @media(max-width:720px){.lab-filter-status{flex-direction:column}}
+
+.lab-date-filter-controls{flex:1 0 100%;min-width:0;display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:14px;margin:0;padding:16px;border:1px solid #3D5B7D;border-radius:8px;box-sizing:border-box}
+.lab-date-filter-controls legend{padding:0 7px;font-size:10px;letter-spacing:1px;color:#ADC1DE;font-weight:700}
+.lab-date-filter-controls>div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.lab-date-filter-controls p{grid-column:1/-1;font-size:11px;line-height:1.7;color:#B2C7E1;margin:0}
+.lab-date-filter-controls input{color-scheme:dark}
+@media(max-width:720px){.lab-date-filter-controls{grid-template-columns:1fr}}
