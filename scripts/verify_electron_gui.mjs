@@ -117,6 +117,7 @@ async function launch(sandbox) {
     LOCALAPPDATA: path.join(sandbox, 'local'),
     XDG_CONFIG_HOME: sandbox,
     BOLT_DEV: '0',
+    BOLT_DIAGNOSTICS: '1',
   };
   let command = appBinary;
   let argv = args;
@@ -149,7 +150,7 @@ async function launch(sandbox) {
     const cdp = connect(target.webSocketDebuggerUrl);
     await cdp.opened;
     await cdp.send('Runtime.enable');
-    return {child, cdp};
+    return {child, cdp, diagnostics:()=>stderr};
   } catch (error) {
     await shutdown({child});
     throw error;
@@ -784,7 +785,7 @@ async function main() {
           if(state.source.includes('synthetic-lab.csv')&&state.points===3)return true;
           throw new Error('Saved-review state: '+JSON.stringify(state));
         },'A saved chart and evidence reopen after process restart without source reimport');
-      }catch(error){captureWindowsDialogState();throw error;}
+      }catch(error){console.error('BOLT_MAIN_DIAGNOSTICS: '+running.diagnostics());captureWindowsDialogState();throw error;}
       assert.equal(await second.eval('!!document.querySelector(".lab-ask-composer") || !!document.querySelector(".lab-ask-context")'),false,'Saved review cannot create live target approval or follow-up context');
       assert.equal(modelRequests.length,requestsBeforeOpen,'Reopening a saved snapshot makes no model call');
       console.log('PASS: packaged analysis snapshot reopens after app restart without importing the source CSV or executing a model/calculation');
