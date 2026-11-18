@@ -174,105 +174,51 @@ async function shutdown(running) {
 }
 
 // Drive real Windows file dialogs in this disposable CI desktop only.
-// This runner exposes native Edit/Button windows as generic UIA Panes; target
-// their observed filename host/ID and native handles rather than UIA control types.
 function respondToFileDialog(destination, title) {
   assert.equal(process.platform,'win32','Native file-dialog verification is Windows-only');
-  const literal=value=>"'"+value.replace(/'/g,"''")+"'";
-  const script=[
+  const literal = value => "'" + value.replace(/'/g,"''") + "'";
+  const keys = destination?.replace(/[+^%~()[\]{}]/g,c => '{' + c + '}');
+  const action = destination ? [
+    "[System.Windows.Forms.SendKeys]::SendWait('%n')",
+    'Start-Sleep -Milliseconds 150',
+    "[System.Windows.Forms.SendKeys]::SendWait('^a')",
+    '[System.Windows.Forms.SendKeys]::SendWait(' + literal(keys) + ')',
+    'Start-Sleep -Milliseconds 150',
+    // Activate Open explicitly so a filename-completion popup cannot consume Enter.
+    title==='Open BOLT analysis'
+      ? "[System.Windows.Forms.SendKeys]::SendWait('%o')"
+      : "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
+  ] : ["[System.Windows.Forms.SendKeys]::SendWait('{ESC}')"];
+  const script = [
     "$ErrorActionPreference = 'Stop'",
-    "$ProgressPreference = 'SilentlyContinue'",
-    'Add-Type -AssemblyName UIAutomationClient',
-    'Add-Type -AssemblyName UIAutomationTypes',
-    'Add-Type -TypeDefinition @\'',
-    'using System;',
-    'using System.Text;',
-    'using System.Runtime.InteropServices;',
-    'public static class BoltDialogControls {',
-    '  [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);',
-    '  [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr control);',
-    '  [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr control);',
-    '  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassNameW(IntPtr control, StringBuilder name, int count);',
-    '  [DllImport("user32.dll", CharSet=CharSet.Unicode, EntryPoint="SendMessageTimeoutW")] private static extern IntPtr SetTextMessage(IntPtr control, uint message, IntPtr count, string text, uint flags, uint timeout, out IntPtr result);',
-    '  [DllImport("user32.dll", CharSet=CharSet.Unicode, EntryPoint="SendMessageTimeoutW")] private static extern IntPtr ReadTextMessage(IntPtr control, uint message, IntPtr count, StringBuilder text, uint flags, uint timeout, out IntPtr result);',
-    '  [DllImport("user32.dll", EntryPoint="PostMessageW", SetLastError=true)] private static extern bool PostCommand(IntPtr window, uint message, IntPtr command, IntPtr control);',
-    '  public static void RequireControl(IntPtr dialog, IntPtr control, string expectedClass) {',
-    '    var name=new StringBuilder(256);',
-    '    if(dialog==IntPtr.Zero || control==IntPtr.Zero || !IsChild(dialog,control) || GetClassNameW(control,name,name.Capacity)==0 || name.ToString()!=expectedClass)',
-    '      throw new InvalidOperationException("Unexpected native file-dialog control: "+name.ToString());',
-    '  }',
-    '  public static void SetFilename(IntPtr dialog, IntPtr control, string filename) {',
-    '    RequireControl(dialog,control,"Edit");',
-    '    IntPtr result;',
-    '    if(SetTextMessage(control,0x000C,IntPtr.Zero,filename,2,2000,out result)==IntPtr.Zero || result==IntPtr.Zero)',
-    '      throw new InvalidOperationException("Native filename entry failed");',
-    '    var text=new StringBuilder(32768);',
-    '    if(ReadTextMessage(control,0x000D,(IntPtr)text.Capacity,text,2,2000,out result)==IntPtr.Zero || text.ToString()!=filename)',
-    '      throw new InvalidOperationException("Native filename did not retain the selected path");',
-    '  }',
-    '  public static void Submit(IntPtr dialog, IntPtr button, int expectedId) {',
-    '    RequireControl(dialog,button,"Button");',
-    '    if(GetDlgCtrlID(button)!=expectedId) throw new InvalidOperationException("Unexpected native dialog button ID");',
-    '    // Dispatch the verified button notification to its native dialog. This',
-    '    // avoids BM_CLICK depending on foreground ownership after app restart.',
-    '    var parent=GetParent(button);',
-    '    if(parent==IntPtr.Zero || (parent!=dialog && !IsChild(dialog,parent)))',
-    '      throw new InvalidOperationException("Native dialog button parent is outside the selected dialog");',
-    '    if(!PostCommand(parent,0x0111,(IntPtr)expectedId,button))',
-    '      throw new InvalidOperationException("Native file-dialog command failed");',
-    '  }',
-    '}',
-    "'@",
-    '$root = [System.Windows.Automation.AutomationElement]::RootElement',
-    '$descendants = [System.Windows.Automation.TreeScope]::Descendants',
-    '$nameProperty = [System.Windows.Automation.AutomationElement]::NameProperty',
-    '$idProperty = [System.Windows.Automation.AutomationElement]::AutomationIdProperty',
-    '$dialogCondition = [System.Windows.Automation.PropertyCondition]::new($nameProperty,'+literal(title)+')',
-    '$dialog = $null',
+    'Add-Type -AssemblyName System.Windows.Forms',
+    '$shell = New-Object -ComObject WScript.Shell',
+    '$active = $false',
     'for ($attempt = 0; $attempt -lt 60; $attempt++) {',
-    '  $dialog = $root.FindFirst([System.Windows.Automation.TreeScope]::Children,$dialogCondition)',
-    '  if ($null -ne $dialog) { break }',
+    '  if ($shell.AppActivate('+literal(title)+')) { $active = $true; break }',
     '  Start-Sleep -Milliseconds 200',
     '}',
-    "if ($null -eq $dialog) { throw 'BOLT file dialog was not found' }",
-    '$dialogHandle = [IntPtr]$dialog.Current.NativeWindowHandle',
-    'function Describe-Dialog {',
-    '  $controls = $dialog.FindAll($descendants,[System.Windows.Automation.Condition]::TrueCondition)',
-    '  $items = foreach ($control in $controls) {',
-    '    if ($control.Current.IsEnabled -and -not $control.Current.IsOffscreen) {',
-    '      $control.Current.ClassName + \": \" + $control.Current.Name + \" [\" + $control.Current.AutomationId + \"] hwnd=\" + $control.Current.NativeWindowHandle',
-    '    }',
-    '  }',
-    '  ($items | Select-Object -First 45) -join \"; \"',
-    '}',
-    ...(destination?[
-      '$hostCondition = [System.Windows.Automation.PropertyCondition]::new($idProperty,\"FileNameControlHost\")',
-      '$filenameHost = $dialog.FindFirst($descendants,$hostCondition)',
-      'if ($null -eq $filenameHost) { throw (\"BOLT filename host not found: \" + (Describe-Dialog)) }',
-      '$filenameCondition = [System.Windows.Automation.PropertyCondition]::new($idProperty,\"1001\")',
-      '$filename = $filenameHost.FindFirst($descendants,$filenameCondition)',
-      'if ($null -eq $filename -or -not $filename.Current.IsEnabled) { throw (\"BOLT filename control not found: \" + (Describe-Dialog)) }',
-      '[BoltDialogControls]::SetFilename($dialogHandle,[IntPtr]$filename.Current.NativeWindowHandle,'+literal(destination)+')',
-    ]:[]),
-    '$buttonName = '+literal(destination?(title==='Open BOLT analysis'?'Open':'Save'):'Cancel'),
-    '$buttonCondition = [System.Windows.Automation.PropertyCondition]::new($nameProperty,$buttonName)',
-    '$button = $dialog.FindFirst($descendants,$buttonCondition)',
-    'if ($null -eq $button -or -not $button.Current.IsEnabled) { throw (\"BOLT file-dialog button unavailable: \" + (Describe-Dialog)) }',
-    '[BoltDialogControls]::Submit($dialogHandle,[IntPtr]$button.Current.NativeWindowHandle,'+(destination?1:2)+')',
-    'for ($attempt = 0; $attempt -lt 50; $attempt++) {',
-    '  Start-Sleep -Milliseconds 100',
-    '  if ($null -eq $root.FindFirst([System.Windows.Automation.TreeScope]::Children,$dialogCondition)) { exit 0 }',
-    '}',
-    'throw (\"BOLT file dialog did not close after \" + $buttonName + \": \" + (Describe-Dialog))',
+    "if (-not $active) { throw 'BOLT file dialog was not found' }",
+    'Start-Sleep -Milliseconds 300',
+    ...action,
   ].join('\r\n');
   const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-STA',
     '-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{
-    encoding:'utf8',windowsHide:true,timeout:30000,
+    encoding:'utf8',windowsHide:true,timeout:20000,
   });
-  assert.equal(result.status,0,'Native file dialog interaction failed: '+(result.stderr||result.stdout||result.error?.message||''));
+  assert.equal(result.status,0,'Native file dialog interaction failed: '+(result.stderr||result.error?.message||''));
 }
 
 function respondToSaveDialog(destination){return respondToFileDialog(destination,'Save BOLT analysis');}
+
+// CDP mouse input follows the visible user flow and supplies a trusted gesture.
+// The restarted app has not received any mouse/keyboard input yet.
+async function clickVisibleButton(cdp,selector) {
+  await cdp.send('Page.bringToFront');
+  const point=await cdp.eval('(() => { const button=document.querySelector('+JSON.stringify(selector)+'); if(!button||button.disabled)throw new Error("Button unavailable"); button.scrollIntoView({block:"center"}); const r=button.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()');
+  await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});
+  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
+}
 
 async function main() {
   const sandbox = mkdtempSync(path.join(tmpdir(), 'bolt-gui-'));
@@ -800,7 +746,7 @@ async function main() {
       const storedSnapshot=JSON.parse(readFileSync(snapshotPath,'utf8'));
       assert.equal(storedSnapshot.sourceName,'synthetic-lab.csv','The saved file survives process restart');
       assert.deepEqual(storedSnapshot.result.chart.points.map(p=>p.value),[100,120,130]);
-      await second.eval('document.querySelector(".lab-open-analysis").click()');
+      await clickVisibleButton(second,'.lab-open-analysis');
       respondToFileDialog(snapshotPath,'Open BOLT analysis');
       await eventually(async()=>{
         const state=await second.eval('({source:document.querySelector(".lab-snapshot-metadata")?.textContent||"",points:document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length,status:document.querySelector(".lab-snapshot-status")?.textContent||"",error:document.querySelector(".lab-snapshot-error")?.textContent||"",opening:document.querySelector(".lab-open-analysis")?.disabled})');
