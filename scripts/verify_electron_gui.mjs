@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { constants, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { constants, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -149,7 +149,7 @@ async function launch(sandbox) {
     const cdp = connect(target.webSocketDebuggerUrl);
     await cdp.opened;
     await cdp.send('Runtime.enable');
-    return {child, cdp};
+    return {child, cdp, diagnostics:()=>stderr};
   } catch (error) {
     await shutdown({child});
     throw error;
@@ -173,9 +173,9 @@ async function shutdown(running) {
   await wait(500);
 }
 
-// Drive the real Windows Save dialog in this disposable CI desktop only.
-function respondToSaveDialog(destination) {
-  assert.equal(process.platform,'win32','Native Save-dialog verification is Windows-only');
+// Drive real Windows file dialogs in this disposable CI desktop only.
+function respondToFileDialog(destination, title) {
+  assert.equal(process.platform,'win32','Native file-dialog verification is Windows-only');
   const literal = value => "'" + value.replace(/'/g,"''") + "'";
   const keys = destination?.replace(/[+^%~()[\]{}]/g,c => '{' + c + '}');
   const action = destination ? [
@@ -184,7 +184,10 @@ function respondToSaveDialog(destination) {
     "[System.Windows.Forms.SendKeys]::SendWait('^a')",
     '[System.Windows.Forms.SendKeys]::SendWait(' + literal(keys) + ')',
     'Start-Sleep -Milliseconds 150',
-    "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
+    // Activate Open explicitly so a filename-completion popup cannot consume Enter.
+    title==='Open BOLT analysis'
+      ? "[System.Windows.Forms.SendKeys]::SendWait('%o')"
+      : "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
   ] : ["[System.Windows.Forms.SendKeys]::SendWait('{ESC}')"];
   const script = [
     "$ErrorActionPreference = 'Stop'",
@@ -192,10 +195,10 @@ function respondToSaveDialog(destination) {
     '$shell = New-Object -ComObject WScript.Shell',
     '$active = $false',
     'for ($attempt = 0; $attempt -lt 60; $attempt++) {',
-    "  if ($shell.AppActivate('Save BOLT analysis')) { $active = $true; break }",
+    '  if ($shell.AppActivate('+literal(title)+')) { $active = $true; break }',
     '  Start-Sleep -Milliseconds 200',
     '}',
-    "if (-not $active) { throw 'BOLT Save dialog was not found' }",
+    "if (-not $active) { throw 'BOLT file dialog was not found' }",
     'Start-Sleep -Milliseconds 300',
     ...action,
   ].join('\r\n');
@@ -203,12 +206,155 @@ function respondToSaveDialog(destination) {
     '-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{
     encoding:'utf8',windowsHide:true,timeout:20000,
   });
-  assert.equal(result.status,0,'Native Save dialog interaction failed: '+(result.stderr||result.error?.message||''));
+  assert.equal(result.status,0,'Native file dialog interaction failed: '+(result.stderr||result.error?.message||''));
+}
+
+function respondToSaveDialog(destination){return respondToFileDialog(destination,'Save BOLT analysis');}
+
+// CDP mouse input follows the visible user flow and supplies a trusted gesture.
+// The restarted app has not received any mouse/keyboard input yet.
+async function clickVisibleButton(cdp,selector) {
+  await cdp.send('Page.bringToFront');
+  const point=await cdp.eval('(() => { const button=document.querySelector('+JSON.stringify(selector)+'); if(!button||button.disabled)throw new Error("Button unavailable"); button.scrollIntoView({block:"center"}); const r=button.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()');
+  await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});
+  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
+}
+
+// The cold-start Open picker uses the classic filename Edit (ID 1148).
+// Select through that real native dialog without relying on runner foreground focus.
+function respondToRestartOpenDialog(destination){
+  const script=[
+    'import ctypes, sys, time',
+    'from ctypes import wintypes',
+    'u=ctypes.WinDLL("user32",use_last_error=True)',
+    'u.FindWindowW.argtypes=[wintypes.LPCWSTR,wintypes.LPCWSTR];u.FindWindowW.restype=wintypes.HWND',
+    'u.GetDlgItem.argtypes=[wintypes.HWND,ctypes.c_int];u.GetDlgItem.restype=wintypes.HWND',
+    'u.GetParent.argtypes=[wintypes.HWND];u.GetParent.restype=wintypes.HWND',
+    'u.GetDlgCtrlID.argtypes=[wintypes.HWND];u.GetDlgCtrlID.restype=ctypes.c_int',
+    'u.GetClassNameW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int];u.GetClassNameW.restype=ctypes.c_int',
+    'u.IsChild.argtypes=[wintypes.HWND,wintypes.HWND];u.IsChild.restype=wintypes.BOOL',
+    'u.IsWindow.argtypes=[wintypes.HWND];u.IsWindow.restype=wintypes.BOOL',
+    'u.IsWindowEnabled.argtypes=[wintypes.HWND];u.IsWindowEnabled.restype=wintypes.BOOL',
+    'u.GetForegroundWindow.restype=wintypes.HWND',
+    'u.VkKeyScanW.argtypes=[wintypes.WCHAR];u.VkKeyScanW.restype=ctypes.c_short',
+    'u.keybd_event.argtypes=[wintypes.BYTE,wintypes.BYTE,wintypes.DWORD,ctypes.c_size_t];u.keybd_event.restype=None',
+    'u.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)];u.GetWindowRect.restype=wintypes.BOOL',
+    'u.SetCursorPos.argtypes=[ctypes.c_int,ctypes.c_int];u.SetCursorPos.restype=wintypes.BOOL',
+    'u.mouse_event.argtypes=[wintypes.DWORD,wintypes.DWORD,wintypes.DWORD,wintypes.DWORD,ctypes.c_size_t];u.mouse_event.restype=None',
+    'u.GetWindowTextW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int];u.GetWindowTextW.restype=ctypes.c_int',
+    'u.ShowWindowAsync.argtypes=[wintypes.HWND,ctypes.c_int];u.ShowWindowAsync.restype=wintypes.BOOL',
+    'u.SetForegroundWindow.argtypes=[wintypes.HWND];u.SetForegroundWindow.restype=wintypes.BOOL',
+    'u.SendMessageTimeoutW.argtypes=[wintypes.HWND,wintypes.UINT,wintypes.WPARAM,wintypes.LPARAM,wintypes.UINT,wintypes.UINT,ctypes.POINTER(ctypes.c_size_t)];u.SendMessageTimeoutW.restype=wintypes.LPARAM',
+    'callback_type=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HWND,wintypes.LPARAM)',
+    'u.EnumChildWindows.argtypes=[wintypes.HWND,callback_type,wintypes.LPARAM];u.EnumChildWindows.restype=wintypes.BOOL',
+    'def class_name(window):',
+    '    name=ctypes.create_unicode_buffer(256);u.GetClassNameW(window,name,len(name));return name.value',
+    'dialog=None',
+    'for attempt in range(60):',
+    '    dialog=u.FindWindowW(None,"Open BOLT analysis")',
+    '    if dialog: break',
+    '    time.sleep(0.2)',
+    'assert dialog, "Restart Open dialog not found"',
+    'assert class_name(dialog)=="#32770", "Unexpected native Open dialog class"',
+    'edits=[]',
+    '@callback_type',
+    'def visit(window,param):',
+    '    if u.GetDlgCtrlID(window)==1148 and class_name(window)=="Edit": edits.append(window)',
+    '    return True',
+    'u.EnumChildWindows(dialog,visit,0)',
+    'assert len(edits)==1, "Expected one classic native filename Edit"',
+    'edit=edits[0];button=u.GetDlgItem(dialog,1)',
+    'assert u.IsChild(dialog,edit) and u.IsWindowEnabled(edit), "Native filename Edit unavailable"',
+    'assert button and class_name(button)=="Button" and u.GetParent(button)==dialog and u.IsWindowEnabled(button), "Native Open button unavailable"',
+    'result=ctypes.c_size_t()',
+    '# This disposable runner console can obscure the picker and own foreground input.',
+    '# Minimize only that known runner window, then activate the real modal dialog.',
+    'foreground=u.GetForegroundWindow()',
+    'if foreground and foreground!=dialog:',
+    '    caption=ctypes.create_unicode_buffer(1024);u.GetWindowTextW(foreground,caption,len(caption))',
+    '    if "hosted-compute-agent" in caption.value.lower():',
+    '        assert u.ShowWindowAsync(foreground,6), "Could not minimize the CI runner console"',
+    'for attempt in range(30):',
+    '    u.SetForegroundWindow(dialog)',
+    '    if u.GetForegroundWindow()==dialog: break',
+    '    time.sleep(0.1)',
+    '# Windows may deny API foreground activation; a real caption click is a user gesture.',
+    'if u.GetForegroundWindow()!=dialog:',
+    '    bounds=wintypes.RECT();assert u.GetWindowRect(dialog,ctypes.byref(bounds)), "Native dialog bounds unavailable"',
+    '    assert bounds.right-bounds.left>200 and bounds.bottom-bounds.top>100, "Native dialog bounds invalid"',
+    '    assert u.SetCursorPos(bounds.left+120,bounds.top+12), "Could not point at native dialog caption"',
+    '    u.mouse_event(0x0002,0,0,0,0);time.sleep(0.05);u.mouse_event(0x0004,0,0,0,0)',
+    '    for attempt in range(20):',
+    '        if u.GetForegroundWindow()==dialog: break',
+    '        time.sleep(0.05)',
+    'assert u.GetForegroundWindow()==dialog, "Native Open dialog is not foreground"',
+    '# Focus through the dialog manager on its own UI thread before clicking Open.',
+    'assert u.SendMessageTimeoutW(dialog,0x0028,edit,1,2,2000,ctypes.byref(result)), "Could not focus the native filename Edit"',
+    '# Type into the focused native Edit so its real input notifications commit the filename.',
+    'def key(code,up=False): u.keybd_event(code,0,2 if up else 0,0)',
+    'key(0x11);key(0x41);key(0x41,True);key(0x11,True)',
+    'for char in sys.argv[1]:',
+    '    mapped=u.VkKeyScanW(char)',
+    '    assert mapped!=-1, "Filename character unavailable on the CI keyboard layout"',
+    '    modifiers=[code for bit,code in ((1,0x10),(2,0x11),(4,0x12)) if (mapped>>8)&bit]',
+    '    for code in modifiers: key(code)',
+    '    key(mapped&255);key(mapped&255,True)',
+    '    for code in reversed(modifiers): key(code,True)',
+    '    time.sleep(0.003)',
+    'readback=ctypes.create_unicode_buffer(32768)',
+    'for attempt in range(10):',
+    '    time.sleep(0.1)',
+    '    assert u.SendMessageTimeoutW(edit,0x000D,len(readback),ctypes.addressof(readback),2,500,ctypes.byref(result)), "Native filename readback failed"',
+    '    if readback.value==sys.argv[1]: break',
+    'assert readback.value==sys.argv[1], "Typed native filename differs from saved file"',
+    '# Use a real click on the verified Open button rather than synthesizing its command.',
+    'bounds=wintypes.RECT();assert u.GetWindowRect(button,ctypes.byref(bounds)), "Native Open button bounds unavailable"',
+    'assert bounds.right-bounds.left>10 and bounds.bottom-bounds.top>10, "Native Open button bounds invalid"',
+    'assert u.SetCursorPos((bounds.left+bounds.right)//2,(bounds.top+bounds.bottom)//2), "Could not point at native Open button"',
+    'u.mouse_event(0x0002,0,0,0,0);time.sleep(0.05);u.mouse_event(0x0004,0,0,0,0)',
+    'for attempt in range(50):',
+    '    if not u.IsWindow(dialog): break',
+    '    time.sleep(0.1)',
+    'assert not u.IsWindow(dialog), "Restart Open dialog did not close"',
+  ].join('\n');
+  const result=spawnSync('python',['-c',script,destination],{encoding:'utf8',windowsHide:true,timeout:35000});
+  assert.equal(result.status,0,'Native restart picker failed: '+(result.stderr||result.stdout||result.error?.message||''));
+}
+
+function captureWindowsDialogState(){
+  const script=[
+    "$ErrorActionPreference = 'Stop'",
+    "$ProgressPreference = 'SilentlyContinue'",
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type -AssemblyName System.Drawing',
+    '$root=[System.Windows.Automation.AutomationElement]::RootElement',
+    '$windows=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)',
+    'foreach($window in $windows){',
+    '  Write-Output (\"BOLT_NATIVE_WINDOW: \"+$window.Current.Name)',
+    '  if($window.Current.Name -eq \"Open BOLT analysis\"){',
+    '    $controls=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)',
+    '    foreach($control in $controls){if($control.Current.IsEnabled -and -not $control.Current.IsOffscreen){Write-Output (\"BOLT_NATIVE_CONTROL: \"+$control.Current.ClassName+\": \"+$control.Current.Name+\" [\"+$control.Current.AutomationId+\"]\")}}',
+    '  }',
+    '}',
+    '$bounds=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+    '$bitmap=[System.Drawing.Bitmap]::new($bounds.Width,$bounds.Height)',
+    '$graphics=[System.Drawing.Graphics]::FromImage($bitmap)',
+    '$graphics.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)',
+    '$stream=[System.IO.MemoryStream]::new()',
+    '$bitmap.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png)',
+    'Write-Output (\"BOLT_DIALOG_SCREENSHOT:\"+[Convert]::ToBase64String($stream.ToArray()))',
+    '$stream.Dispose();$graphics.Dispose();$bitmap.Dispose()',
+  ].join('\r\n');
+  const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-STA','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:15000,maxBuffer:4_000_000});
+  console.log(result.stdout||result.stderr||result.error?.message||'No native dialog diagnostic output');
 }
 
 async function main() {
   const sandbox = mkdtempSync(path.join(tmpdir(), 'bolt-gui-'));
   let running;
+  const snapshotPath=path.join(sandbox,'synthetic-analysis.bolt');
   const modelRequests = [];
   const modelServer = createHttpServer((request, response) => {
     let body = '';
@@ -440,6 +586,43 @@ async function main() {
         assert.ok(exportedChart.text.includes(value),'PowerPoint chart retains '+value);
       }
       console.log('PASS: packaged CSV chart uses actual aggregates, saves SVG/HTML and editable PowerPoint shapes with full chart data');
+    }
+    if(process.platform==='win32'){
+      assert.equal(await first.eval('window.boltApi.openDataAnalysis({path:"forbidden"}).then(()=>false,()=>true)'),true,'Saved-file IPC cannot receive renderer paths');
+      const beforeOpen=await first.eval('document.querySelectorAll(".lab-ask-turn").length');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-snapshot").click()');
+      respondToSaveDialog(snapshotPath);
+      await eventually(async()=>existsSync(snapshotPath)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Analysis snapshot saved."'
+      ),'A calculated chart saves as a local BOLT snapshot through the native dialog');
+      const saved=JSON.parse(readFileSync(snapshotPath,'utf8'));
+      assert.equal(saved.kind,'bolt.analysis.snapshot');assert.equal(saved.version,1);
+      assert.equal(saved.sourceName,'synthetic-lab.csv');assert.equal(saved.target,'attendance');
+      assert.deepEqual(saved.result.chart.points.map(p=>p.value),[100,120,130]);
+      assert.deepEqual(Object.keys(saved).sort(),['interpretation','kind','question','result','savedAt','sourceName','target','version']);
+      assert.equal(Object.hasOwn(saved.result,'planning'),false);
+      assert.equal(Object.hasOwn(saved.result,'rows'),false);
+      await first.eval('document.querySelector(".lab-open-analysis").click()');
+      respondToFileDialog(snapshotPath,'Open BOLT analysis');
+      await eventually(async()=>await first.eval(
+        'document.querySelector(".lab-saved-analysis")?.textContent?.includes("not recalculated") && document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length === 3'
+      ),'The saved chart reopens with an explicit snapshot label');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-ask-turn").length'),beforeOpen,'Opening a snapshot leaves live question history intact');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-saved-analysis .lab-ask-exports,.lab-saved-analysis .lab-ask-composer,.lab-saved-analysis .lab-data-workflow").length'),0,'Saved contents cannot act as a live question or fresh-result export');
+      const malformed=path.join(sandbox,'malformed-analysis.bolt');
+      writeFileSync(malformed,'{"kind":"not-a-bolt-snapshot"}');
+      await first.eval('document.querySelector(".lab-open-analysis").click()');
+      respondToFileDialog(malformed,'Open BOLT analysis');
+      await eventually(async()=>await first.eval('!!document.querySelector(".lab-snapshot-error")'),'An invalid saved file is rejected visibly');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length'),3,'A rejected file preserves the previous saved preview');
+      await first.eval('document.querySelector(".lab-open-analysis").click()');
+      respondToFileDialog(undefined,'Open BOLT analysis');
+      await eventually(async()=>await first.eval('document.querySelector(".lab-snapshot-status")?.textContent === "Open cancelled."'),'Cancelling the picker is explicit');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length'),3,'Cancelling an open does not discard the previous preview');
+      await first.eval('document.querySelector(".lab-close-analysis").click()');
+      await eventually(async()=>await first.eval('!document.querySelector(".lab-saved-analysis")'),'Closing saved review leaves the live dataset in place');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-ask-turn").length'),beforeOpen,'Close preview does not reset live questions');
+      console.log('PASS: packaged analysis snapshot saves and reopens charts/evidence through native dialogs; invalid/cancel/close leave live questions unchanged');
     }
     assert.equal(modelRequests.length,0,'Chart calculation and export must not call the model');
     async function askLocal(question) {
@@ -684,6 +867,30 @@ async function main() {
       '/^\\s*SELECT\\b/i.test(document.querySelector("pre.sql code")?.textContent || "")'
     ), true, 'Restart must restore SQL evidence from persisted conversation');
     console.log('PASS: packaged Electron restart restores conversation, chart and evidence');
+    if(process.platform==='win32'){
+      const requestsBeforeOpen=modelRequests.length;
+      await second.eval('([...document.querySelectorAll("button.workspace-button")].find(x=>x.textContent.includes("Data Lab")))?.click()');
+      await eventually(async()=>await second.eval(
+        'getComputedStyle(document.querySelector("main.data-lab")).display !== "none" && !!document.querySelector(".lab-open-analysis")'
+      ),'Saved analyses can be opened before importing a CSV after restart');
+      assert.equal(await second.eval('!!document.querySelector(".lab-result-header") || !!document.querySelector(".lab-ask-composer")'),false,'The restarted app has no imported live CSV');
+      const storedSnapshot=JSON.parse(readFileSync(snapshotPath,'utf8'));
+      assert.equal(storedSnapshot.sourceName,'synthetic-lab.csv','The saved file survives process restart');
+      assert.deepEqual(storedSnapshot.result.chart.points.map(p=>p.value),[100,120,130]);
+      await clickVisibleButton(second,'.lab-open-analysis');
+      respondToRestartOpenDialog(snapshotPath);
+      try{
+        await eventually(async()=>{
+          const state=await second.eval('({source:document.querySelector(".lab-snapshot-metadata")?.textContent||"",points:document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length,status:document.querySelector(".lab-snapshot-status")?.textContent||"",error:document.querySelector(".lab-snapshot-error")?.textContent||"",opening:document.querySelector(".lab-open-analysis")?.disabled})');
+          if(state.source.includes('synthetic-lab.csv')&&state.points===3)return true;
+          throw new Error('Saved-review state: '+JSON.stringify(state));
+        },'A saved chart and evidence reopen after process restart without source reimport');
+      }catch(error){console.error('BOLT_MAIN_DIAGNOSTICS: '+running.diagnostics());captureWindowsDialogState();throw error;}
+      assert.equal(await second.eval('!!document.querySelector(".lab-ask-composer") || !!document.querySelector(".lab-ask-context")'),false,'Saved review cannot create live target approval or follow-up context');
+      assert.equal(modelRequests.length,requestsBeforeOpen,'Reopening a saved snapshot makes no model call');
+      console.log('PASS: packaged analysis snapshot reopens after app restart without importing the source CSV or executing a model/calculation');
+    }
+
   } finally {
     modelServer.closeAllConnections();
     await new Promise(resolve=>modelServer.close(resolve));

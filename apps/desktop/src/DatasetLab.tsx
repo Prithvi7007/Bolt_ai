@@ -2,6 +2,7 @@ import {useState, type ChangeEvent, type DragEvent} from 'react';
 import {Activity, Check, ChevronRight, Database, FileSpreadsheet, HardDriveDownload,
         Info, RefreshCcw, ShieldCheck, Sparkles, UploadCloud, AlertTriangle} from 'lucide-react';
 import {profileCsvFile, type DatasetProfile} from './dataset-understanding.mjs';
+import SavedAnalysisPanel from './SavedAnalysisPanel';
 import CategoryFilter from './CategoryFilter';
 import type {CategoryFilter as Filter,DateFilter} from './local-analysis.mjs';
 import LocalAnalysis from './LocalAnalysis';
@@ -71,6 +72,8 @@ export default function DatasetLab() {
       </div>
 
       <div className="lab-privacy"><ShieldCheck size={17}/><div><strong>Local by design</strong><span>CSV rows are profiled and calculated on-device. Optional AI planning below shares only your question, approved target, and column names/types. Row values and previews are not uploaded; imported data is not saved after you close the app.</span></div></div>
+
+      <SavedAnalysisPanel/>
 
       <section className="lab-upload-section" aria-label="Import a CSV dataset">
         <div className="lab-section-heading"><div><span>01 / IMPORT</span><h2>Dataset source</h2></div><span className="lab-section-meta">CSV · UTF-8 · On-device</span></div>
