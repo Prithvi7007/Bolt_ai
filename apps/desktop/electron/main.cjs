@@ -109,7 +109,11 @@ app.whenReady().then(async () => {
       const owner = BrowserWindow.fromWebContents(event.sender);
       if (!owner) throw new Error('BOLT window is unavailable');
       return saveDataAnswer(input, {
-        showSaveDialog: options => dialog.showSaveDialog(owner, options),
+        showSaveDialog: options => {
+          owner.show();
+          owner.focus();
+          return dialog.showSaveDialog(owner, options);
+        },
         writeFile: fs.promises.writeFile,
         createPresentation: input => {
           if (!backend) throw new Error('PowerPoint generation is unavailable');
@@ -126,7 +130,12 @@ app.whenReady().then(async () => {
       }
       const owner=BrowserWindow.fromWebContents(event.sender);
       if(!owner)throw new Error('BOLT window is unavailable');
-      return openDataAnalysis({showOpenDialog:options=>dialog.showOpenDialog(owner,options)});
+      return openDataAnalysis({showOpenDialog:options=>{
+        // A native picker needs a visible owner, including after a cold restart.
+        owner.show();
+        owner.focus();
+        return dialog.showOpenDialog(owner,options);
+      }});
     });
     ipcMain.handle('bolt:save-artifact', async (event, artifactId, sessionId, filename) => {
       const source = event.senderFrame?.url;
