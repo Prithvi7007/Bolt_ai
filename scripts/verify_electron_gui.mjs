@@ -220,6 +220,36 @@ async function clickVisibleButton(cdp,selector) {
   await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
 }
 
+function captureWindowsDialogState(){
+  const script=[
+    "$ErrorActionPreference = 'Stop'",
+    "$ProgressPreference = 'SilentlyContinue'",
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type -AssemblyName System.Drawing',
+    '$root=[System.Windows.Automation.AutomationElement]::RootElement',
+    '$windows=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)',
+    'foreach($window in $windows){',
+    '  Write-Output (\"BOLT_NATIVE_WINDOW: \"+$window.Current.Name)',
+    '  if($window.Current.Name -eq \"Open BOLT analysis\"){',
+    '    $controls=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)',
+    '    foreach($control in $controls){if($control.Current.IsEnabled -and -not $control.Current.IsOffscreen){Write-Output (\"BOLT_NATIVE_CONTROL: \"+$control.Current.ClassName+\": \"+$control.Current.Name+\" [\"+$control.Current.AutomationId+\"]\")}}',
+    '  }',
+    '}',
+    '$bounds=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+    '$bitmap=[System.Drawing.Bitmap]::new($bounds.Width,$bounds.Height)',
+    '$graphics=[System.Drawing.Graphics]::FromImage($bitmap)',
+    '$graphics.CopyFromScreen($bounds.Location,[System.Drawing.Point]::Empty,$bounds.Size)',
+    '$stream=[System.IO.MemoryStream]::new()',
+    '$bitmap.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png)',
+    'Write-Output (\"BOLT_DIALOG_SCREENSHOT:\"+[Convert]::ToBase64String($stream.ToArray()))',
+    '$stream.Dispose();$graphics.Dispose();$bitmap.Dispose()',
+  ].join('\r\n');
+  const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-STA','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:15000,maxBuffer:4_000_000});
+  console.log(result.stdout||result.stderr||result.error?.message||'No native dialog diagnostic output');
+}
+
 async function main() {
   const sandbox = mkdtempSync(path.join(tmpdir(), 'bolt-gui-'));
   let running;
@@ -748,11 +778,13 @@ async function main() {
       assert.deepEqual(storedSnapshot.result.chart.points.map(p=>p.value),[100,120,130]);
       await clickVisibleButton(second,'.lab-open-analysis');
       respondToFileDialog(snapshotPath,'Open BOLT analysis');
-      await eventually(async()=>{
-        const state=await second.eval('({source:document.querySelector(".lab-snapshot-metadata")?.textContent||"",points:document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length,status:document.querySelector(".lab-snapshot-status")?.textContent||"",error:document.querySelector(".lab-snapshot-error")?.textContent||"",opening:document.querySelector(".lab-open-analysis")?.disabled})');
-        if(state.source.includes('synthetic-lab.csv')&&state.points===3)return true;
-        throw new Error('Saved-review state: '+JSON.stringify(state));
-      },'A saved chart and evidence reopen after process restart without source reimport');
+      try{
+        await eventually(async()=>{
+          const state=await second.eval('({source:document.querySelector(".lab-snapshot-metadata")?.textContent||"",points:document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length,status:document.querySelector(".lab-snapshot-status")?.textContent||"",error:document.querySelector(".lab-snapshot-error")?.textContent||"",opening:document.querySelector(".lab-open-analysis")?.disabled})');
+          if(state.source.includes('synthetic-lab.csv')&&state.points===3)return true;
+          throw new Error('Saved-review state: '+JSON.stringify(state));
+        },'A saved chart and evidence reopen after process restart without source reimport');
+      }catch(error){captureWindowsDialogState();throw error;}
       assert.equal(await second.eval('!!document.querySelector(".lab-ask-composer") || !!document.querySelector(".lab-ask-context")'),false,'Saved review cannot create live target approval or follow-up context');
       assert.equal(modelRequests.length,requestsBeforeOpen,'Reopening a saved snapshot makes no model call');
       console.log('PASS: packaged analysis snapshot reopens after app restart without importing the source CSV or executing a model/calculation');
