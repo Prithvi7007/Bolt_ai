@@ -60,7 +60,9 @@ Choose **Save chart** for a standalone SVG with source and calculation evidence.
 
 After approving a target, choose a categorical column and an exact nonblank value under **Analyze a subset**, then select **Apply filter**. Matching is case-sensitive after trimming surrounding whitespace. Local analysis and questions use only matching accepted rows, including grouped/date charts, correlations and missingness counts. The structural profile and source preview continue to describe the full CSV.
 
-Answers and exports include the filter and matching/source row counts. Apply or Clear filter resets previous results and question context; changing the source or target also clears the filter. Filter values are applied on-device and are not added to model requests or graph receipts. Free-text filter expressions and date ranges remain unsupported. See [local category filtering](docs/standalone-category-filter.md).
+Answers and exports include the filter and matching/source row counts. Apply or Clear filter resets previous results and question context; changing the source or target also clears the filter. Filter values are applied on-device and are not added to model requests or graph receipts. Free-text filter expressions remain unsupported. See [local category filtering](docs/standalone-category-filter.md).
+
+You can also select a date column and inclusive **From / Through** bounds. Either bound may be open, and date ranges can intersect the category filter. This selects observed date keys: month-only keys use the first day of that month, and monthly aggregates are never split into daily estimates. Missing/invalid filter dates are excluded before target statistics and disclosed separately. Apply/Clear, source replacement and target changes reset both filters and calculations. Bounds are not added to model requests or graph receipts. See [local date-key ranges](docs/standalone-date-filter.md).
 
 ## Follow up within a CSV calculation
 

@@ -1,8 +1,10 @@
 import type {DatasetProfile} from './dataset-understanding.mjs';
+export type DateFilter={column:string;from:string|null;to:string|null};
 export type CategoryFilter={column:string;value:string};
 export type AnalysisOptions = {
   target: string;
   categoryFilter?:CategoryFilter|null;
+  dateFilter?:DateFilter|null;
   dimension?: string | null;
   dateColumn?: string | null;
   predictor?: string | null;
@@ -12,6 +14,10 @@ export type GroupRow = {label: string; isOverflow: boolean; rows: number; sum: n
 export type TimelineRow = {date: string; rows: number; sum: number; mean: number};
 export type LocalAnalysisReport = {
   categoryFilter:CategoryFilter|null;
+  dateFilter:DateFilter|null;
+  excludedByCategoryRows:number;
+  excludedByDateFilterRows:number;
+  invalidFilterDateRows:number;
   target: string;
   dimension: string | null;
   dateColumn: string | null;
@@ -43,3 +49,8 @@ export function analyzeCsvFile(file: File, options: AnalysisOptions): Promise<Lo
 
 export function validateCategoryFilter(input:unknown,profile?:DatasetProfile|null):CategoryFilter|null;
 export function describeCategoryFilter(filter:CategoryFilter|null):string;
+
+export const DATE_FILTER_CONVENTION:string;
+export function validateDateFilter(input:unknown,profile?:DatasetProfile|null):DateFilter|null;
+export function describeDateFilter(filter:DateFilter|null):string;
+export function describeFilterScope(categoryFilter:CategoryFilter|null,dateFilter:DateFilter|null):string;

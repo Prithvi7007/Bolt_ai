@@ -1,6 +1,6 @@
 import {useState,useEffect,useRef} from 'react';
 import {Activity, AlertTriangle, BarChart3, CheckCircle2, Database, Play, ShieldCheck} from 'lucide-react';
-import {analyzeCsvFile, type LocalAnalysisReport,type CategoryFilter} from './local-analysis.mjs';
+import {analyzeCsvFile, type LocalAnalysisReport,type CategoryFilter,type DateFilter} from './local-analysis.mjs';
 import type {DatasetProfile} from './dataset-understanding.mjs';
 import './local-analysis.css';
 
@@ -32,7 +32,7 @@ function Timeline({report, aggregation}: {report: LocalAnalysisReport; aggregati
   </div>;
 }
 
-export default function LocalAnalysis({file, profile, target,categoryFilter=null}: {file: File; profile: DatasetProfile; target: string;categoryFilter?:CategoryFilter|null}) {
+export default function LocalAnalysis({file, profile, target,categoryFilter=null,dateFilter=null}: {file: File; profile: DatasetProfile; target: string;categoryFilter?:CategoryFilter|null;dateFilter?:DateFilter|null}) {
   const alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const [dimension, setDimension] = useState('');
@@ -47,7 +47,7 @@ export default function LocalAnalysis({file, profile, target,categoryFilter=null
     setError('');
     try {
       const outcome = await analyzeCsvFile(file, {
-        target, dimension: dimension || null, dateColumn: profile.dateColumn,categoryFilter,
+        target, dimension: dimension || null, dateColumn: profile.dateColumn,categoryFilter,dateFilter,
       });
       if(alive.current)setReport(outcome);
     } catch (cause) {
@@ -74,7 +74,7 @@ export default function LocalAnalysis({file, profile, target,categoryFilter=null
     {report && <div className="lab-analysis-results">
       <div className="lab-analysis-provenance"><CheckCircle2 size={17}/>
         Analyzed {report.validRows.toLocaleString()} rows with valid {target} from {report.matchedRows.toLocaleString()} matching rows / {report.scannedRows.toLocaleString()} accepted CSV rows. No remote request.</div>
-      {categoryFilter&&report.matchedRows===0&&<p className="lab-analysis-empty">No accepted rows match this filter. Change or clear it to calculate a result.</p>}
+      {(categoryFilter||dateFilter)&&report.matchedRows===0&&<p className="lab-analysis-empty">No accepted rows match this filter. Change or clear it to calculate a result.</p>}
       <div className="lab-analysis-kpis">
         <div><span>AVERAGE {target.toUpperCase()}</span><strong>{display(report.mean)}</strong></div>
         <div><span>TOTAL</span><strong>{display(report.total)}</strong></div>

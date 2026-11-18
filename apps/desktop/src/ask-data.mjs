@@ -5,7 +5,7 @@
  * persistence. Every supported answer is computed by analyzeCsvFile() from
  * an explicitly approved numeric target and a bounded streaming CSV pass.
  */
-import {analyzeCsvFile,validateCategoryFilter} from './local-analysis.mjs';
+import {analyzeCsvFile,validateCategoryFilter,validateDateFilter} from './local-analysis.mjs';
 import {validateChart} from '../shared/data-chart.mjs';
 
 const MAX_QUESTION_LENGTH = 400;
@@ -77,7 +77,7 @@ function questionGuard(question, profile, approvedTarget) {
     return {kind:'unsupported', error:'Free-text category-value filters are not supported. Choose the subset with the local filter controls, or ask for a grouped breakdown such as “total ' + approvedTarget + ' by region”.'};
   }
   if (UNSUPPORTED_SCOPE.test(q) || /\b(?:19|20)\d{2}\b/.test(q)) {
-    return {kind:'unsupported', error:'Use the local category-filter controls for a subset. Free-text filters and date-range questions are not supported.'};
+    return {kind:'unsupported', error:'Use the local subset controls for category and date-key ranges. Free-text filter expressions are not supported.'};
   }
   if (FORBIDDEN_INFERENCE.test(q)) {
     return {kind:'unsupported', error:'This release calculates descriptive statistics only. It does not forecast, test statistical significance, determine causes or optimize.'};
@@ -172,7 +172,7 @@ function result(kind, title, answer, calculation, report, table = [], extra = []
   return {
     kind:'answered', title, answer, calculation, table,
     evidence:'On-device CSV scan · ' + fmt(report.validRows) + ' numeric target rows / '
-      + (report.categoryFilter?fmt(report.matchedRows)+' matching rows / ':'') + fmt(report.scannedRows) + ' accepted rows · ' + fmt(report.excludedTargetRows) + ' missing or invalid target rows'
+      + ((report.categoryFilter||report.dateFilter)?fmt(report.matchedRows)+' matching rows / ':'') + fmt(report.scannedRows) + ' accepted rows · ' + fmt(report.excludedTargetRows) + ' missing or invalid target rows'
       + (report.dateColumn ? ' · ' + fmt(report.timelineRows) + ' rows represented in date buckets · '
         + fmt(report.excludedDateRows) + ' missing or invalid date rows · '
         + fmt(report.datedTargetRows - report.timelineRows) + ' valid date rows omitted at the date limit' : ''),
@@ -295,27 +295,32 @@ export function resolveDataQuestionPlan(question,profile,approvedTarget,previous
 }
 
 function attachChart(answer,chart) {
-  const filterNote=answer.warnings.find(w=>w.startsWith('Local category filter:'));
-  if(filterNote)chart={...chart,note:chart.note+' '+filterNote};
+  const filterNotes=answer.warnings.filter(w=>w.startsWith('Local category filter:')||w.startsWith('Local date filter:'));
+  if(filterNotes.length){
+    const note=chart.note+' '+filterNotes.join(' ');
+    chart={...chart,note:note.length<=2000?note:chart.note+' Applied filter constraints and matching coverage are retained in the calculation caveats.'};
+  }
   try {validateChart(chart);return {...answer,chart};}
   catch {return {...answer,warnings:[...answer.warnings,'A chart could not be generated from these aggregate values. Use the calculation table.']};}
 }
 
-export async function answerDataPlan(file, inputPlan, profile, approvedTarget, {categoryFilter=null}={}) {
+export async function answerDataPlan(file, inputPlan, profile, approvedTarget, {categoryFilter=null,dateFilter=null}={}) {
   categoryFilter=validateCategoryFilter(categoryFilter,profile);
+  dateFilter=validateDateFilter(dateFilter,profile);
+  const filtered=Boolean(categoryFilter||dateFilter);
   if (inputPlan.kind === 'unsupported') return unsupported(inputPlan.error || inputPlan.reason || 'Please rephrase the question.');
   const plan = validateDataPlan(inputPlan,profile,approvedTarget);
-  if (plan.kind === 'quality'&&!categoryFilter) return qualityAnswer(profile,approvedTarget);
+  if (plan.kind === 'quality'&&!filtered) return qualityAnswer(profile,approvedTarget);
 
   const requestedDate = plan.kind === 'timeline' ? plan.dateColumn : null;
   const requestedGroup = plan.kind === 'group' ? plan.dimension : null;
   const report = await analyzeCsvFile(file,{
-    target:approvedTarget, dimension:requestedGroup, dateColumn:requestedDate,categoryFilter,
+    target:approvedTarget, dimension:requestedGroup, dateColumn:requestedDate,categoryFilter,dateFilter,
     predictor:plan.kind === 'correlation' ? plan.predictor : null,
   });
-  if(categoryFilter&&!report.matchedRows)return result(plan.kind,'No matching rows',
-    'No accepted CSV rows match the applied category filter. Change or clear the filter.',
-    'Match trimmed category values exactly, then calculate within matching rows',report);
+  if(filtered&&!report.matchedRows)return result(plan.kind,'No matching rows',
+    'No accepted CSV rows match the applied filters. Change or clear the filters.',
+    'Apply the selected category and date-key constraints, then calculate within matching rows',report);
   if(plan.kind==='quality'){
     const columns=profile.columns.map(col=>{
       const missing=report.missingness.find(item=>item.name===col.name).missing;
@@ -326,7 +331,7 @@ export async function answerDataPlan(file, inputPlan, profile, approvedTarget, {
       fmt(report.scannedRows)+' accepted rows',warnings:[...report.warnings,...answer.warnings]};
   }
   if (!report.validRows) return result(plan.kind,'No numeric target observations',
-    'No valid numeric values for ' + approvedTarget + ' were found'+(categoryFilter?' among matching rows.':' in the imported file.'),
+    'No valid numeric values for ' + approvedTarget + ' were found'+(filtered?' among matching rows.':' in the imported file.'),
     'Count of rows with finite numeric target values',report);
   switch(plan.kind) {
     case 'overview':
@@ -337,12 +342,12 @@ export async function answerDataPlan(file, inputPlan, profile, approvedTarget, {
         'Arithmetic mean, sum, min, max and sample standard deviation over nonmissing numeric target values',report);
     case 'count':
       return result(plan.kind,'Valid ' + approvedTarget + ' observations',
-        fmt(report.validRows) + ' of ' + fmt(report.matchedRows) + (categoryFilter?' matching':' accepted')+' CSV rows contain a valid numeric ' + approvedTarget + '.',
+        fmt(report.validRows) + ' of ' + fmt(report.matchedRows) + (filtered?' matching':' accepted')+' CSV rows contain a valid numeric ' + approvedTarget + '.',
         'Count of finite numeric target values',report);
     case 'sum':
       return result(plan.kind,'Total ' + approvedTarget,
         'The total ' + approvedTarget + ' is ' + datum(report.total) + ' across ' + fmt(report.validRows) + ' valid target rows.',
-        'Sum of all valid numeric ' + approvedTarget + ' values'+(categoryFilter?' within matching rows':', with no filter'),report);
+        'Sum of all valid numeric ' + approvedTarget + ' values'+(filtered?' within matching rows':', with no filter'),report);
     case 'mean':
       return result(plan.kind,'Average ' + approvedTarget,
         'The arithmetic mean of ' + approvedTarget + ' is ' + datum(report.mean) + ' across ' + fmt(report.validRows) + ' valid target rows.',
