@@ -12,7 +12,7 @@ function text(value, max, nullable = false) {
   if (nullable && value === null) return true;
   return typeof value === 'string' && value.length <= max && (nullable || value.trim().length > 0);
 }
-function validateInput(input, formats = ['html','csv','svg']) {
+function validateDataAnswerInput(input, formats = ['html','csv','svg','bolt']) {
   if (!object(input, ['format','sourceName','target','question','interpretation','result'])
       || !formats.includes(input.format)
       || !text(input.sourceName,255) || !text(input.target,160) || !text(input.question,400)
@@ -121,18 +121,27 @@ function htmlDocument(input, created, chartSvg) {
 }
 
 function createDataAnswerExport(input, createdAt = new Date(), chartTools) {
-  validateInput(input);
+  validateDataAnswerInput(input);
   let chartSvg='';
   if(input.result.chart!==undefined){
-    if(typeof chartTools?.validateChart!=='function'||typeof chartTools?.renderChartSvg!=='function')invalid();
+    if(typeof chartTools?.validateChart!=='function')invalid();
     chartTools.validateChart(input.result.chart);
-    chartSvg=chartTools.renderChartSvg(input.result.chart,{
+    if(input.format!=='bolt'){
+      if(typeof chartTools?.renderChartSvg!=='function')invalid();
+      chartSvg=chartTools.renderChartSvg(input.result.chart,{
       sourceName:input.sourceName,target:input.target,question:input.question,
       calculation:input.result.calculation,evidence:input.result.evidence,warnings:input.result.warnings,
-    });
+      });
+    }
   }
   if(input.format==='svg'&&!chartSvg)invalid();
   const created = createdAt.toISOString();
+  if(input.format==='bolt')return {
+    filename:'BOLT-analysis.bolt',extension:'bolt',
+    content:JSON.stringify({kind:'bolt.analysis.snapshot',version:1,savedAt:created,
+      sourceName:input.sourceName,target:input.target,question:input.question,
+      interpretation:input.interpretation,result:input.result})+'\n',
+  };
   return {
     filename:'BOLT-analysis.' + input.format,
     extension:input.format,
@@ -141,7 +150,7 @@ function createDataAnswerExport(input, createdAt = new Date(), chartTools) {
 }
 
 function validateDataPresentationInput(input) {
-  return validateInput(input, ['pptx']);
+  return validateDataAnswerInput(input, ['pptx']);
 }
 
 async function presentationContent(input, createPresentation) {
@@ -165,14 +174,14 @@ async function presentationContent(input, createPresentation) {
 async function saveDataAnswer(input, {showSaveDialog,writeFile,createPresentation}) {
   const pptx = input?.format === 'pptx';
   if (pptx) validateDataPresentationInput(input);
-  if(!pptx)validateInput(input);
+  if(!pptx)validateDataAnswerInput(input);
   const chartTools=input.result.chart!==undefined?await import('../shared/data-chart.mjs'):undefined;
   if(pptx&&chartTools)chartTools.validateChart(input.result.chart);
   const artifact = pptx ? {filename:'BOLT-analysis.pptx',extension:'pptx'} : createDataAnswerExport(input,new Date(),chartTools);
   const choice = await showSaveDialog({
     title:'Save BOLT analysis',
     defaultPath:artifact.filename,
-    filters:[{name:artifact.extension === 'html' ? 'HTML analysis report' : pptx ? 'Editable PowerPoint' : artifact.extension === 'svg' ? 'SVG calculated chart' : 'CSV analysis results',
+    filters:[{name:artifact.extension === 'html' ? 'HTML analysis report' : pptx ? 'Editable PowerPoint' : artifact.extension === 'bolt' ? 'BOLT saved analysis' : artifact.extension === 'svg' ? 'SVG calculated chart' : 'CSV analysis results',
       extensions:[artifact.extension]}],
   });
   if (choice.canceled) return {saved:false};
@@ -186,4 +195,4 @@ async function saveDataAnswer(input, {showSaveDialog,writeFile,createPresentatio
   return {saved:true};
 }
 
-module.exports = {createDataAnswerExport,saveDataAnswer,validateDataPresentationInput};
+module.exports = {createDataAnswerExport,saveDataAnswer,validateDataPresentationInput,validateDataAnswerInput};

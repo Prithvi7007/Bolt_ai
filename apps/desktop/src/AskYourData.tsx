@@ -39,7 +39,7 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
   const [saving,setSaving]=useState(false);
   const [notice,setNotice]=useState('');
   const [saveError,setSaveError]=useState('');
-  async function save(format:'html'|'csv'|'pptx'|'svg') {
+  async function save(format:'html'|'csv'|'pptx'|'svg'|'bolt') {
     if(saving||!window.boltApi?.saveDataAnswer)return;
     setSaving(true);setNotice('');setSaveError('');
     const {title,table,calculation,evidence,warnings}=answer;
@@ -48,7 +48,7 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
         format,sourceName,target,question,interpretation:answer.planning?.mode||'local',
         result:{title,answer:answer.answer,table,calculation,evidence,warnings,...(answer.chart?{chart:answer.chart}:{})},
       });
-      if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':format==='pptx'?'PowerPoint saved.':format==='svg'?'Chart saved.':'Analysis CSV saved.'):'Save cancelled.');
+      if(alive.current)setNotice(outcome.saved?(format==='html'?'Analysis report saved.':format==='pptx'?'PowerPoint saved.':format==='svg'?'Chart saved.':format==='bolt'?'Analysis snapshot saved.':'Analysis CSV saved.'):'Save cancelled.');
     } catch(cause) {
       if(alive.current)setSaveError(cause instanceof Error&&cause.message.includes('HTML or CSV')?
         'PowerPoint export could not be completed. Save as HTML or CSV for this answer, or try again.':
@@ -64,25 +64,26 @@ function AnswerExports({answer,question,sourceName,target}:{answer:DataAnswer;qu
       <button type="button" className="lab-ask-save-csv" disabled={saving} onClick={()=>void save('csv')}><Download size={15}/> Export CSV</button>
       <button type="button" className="lab-ask-save-pptx" disabled={saving} onClick={()=>void save('pptx')}><FileText size={15}/> Save PowerPoint</button>
       {answer.chart&&<button type="button" className="lab-ask-save-chart" disabled={saving} onClick={()=>void save('svg')}><Download size={15}/> Save chart</button>}
+      <button type="button" className="lab-ask-save-snapshot" disabled={saving} onClick={()=>void save('bolt')}><Download size={15}/> Save analysis</button>
       <span className="lab-ask-export-status" role="status">{saving?'Choose where to save…':notice}</span>
     </div>
-    <p>Saves the displayed answer, table, calculation and caveats. Choose an HTML report, CSV results, or PowerPoint with editable text and chart shapes. Charted PowerPoints include the full plotted values. Chart-data CSV rows retain full numeric precision.</p>
+    <p>Saves the displayed answer, table, calculation and caveats. Choose an HTML report, CSV results, or PowerPoint with editable text and chart shapes. Charted PowerPoints include the full plotted values. Chart-data CSV rows retain full numeric precision. Save analysis creates a .bolt snapshot for later review in BOLT.</p>
     {saveError&&<p role="alert" className="lab-ask-export-error">{saveError}</p>}
   </div>;
 }
 
-function AnswerCard({answer,question,sourceName,target}: {answer:DataAnswer;question:string;sourceName:string;target:string}) {
-  return <article className={'lab-ask-answer '+(answer.kind==='unsupported'?'lab-ask-unsupported':'')} aria-label="Calculated dataset answer">
+export function AnswerCard({answer,question,sourceName,target,archived=false}: {answer:DataAnswer;question:string;sourceName:string;target:string;archived?:boolean}) {
+  return <article className={'lab-ask-answer '+(answer.kind==='unsupported'?'lab-ask-unsupported':'')} aria-label={archived?"Saved analysis snapshot":"Calculated dataset answer"}>
     <div className="lab-ask-answer-title">
-      {answer.kind==='answered'?<CheckCircle2 size={17}/>:<Info size={17}/>}
+      {archived?<FileText size={17}/>:answer.kind==='answered'?<CheckCircle2 size={17}/>:<Info size={17}/>}
       <strong>{answer.title}</strong>
     </div>
-    {answer.planning&&<p className="lab-ask-planning">{answer.planning.mode==='model'?
+    {!archived&&answer.planning&&<p className="lab-ask-planning">{answer.planning.mode==='model'?
       'AI interpretation: '+answer.planning.operation+' · '+(answer.kind==='answered'?'calculated on-device':'no calculation executed')+
       ' · '+((answer.planning.usage?.prompt_tokens||0)+(answer.planning.usage?.completion_tokens||0))+' reported tokens':
       'Local interpretation · no model call'}</p>}
-    {answer.planning?.workflow&&<WorkflowCard workflow={answer.planning.workflow}/>}
-    {answer.planning?.contextUsed&&<p className="lab-ask-context-resolution">Resolved follow-up: {answer.planning.scope}</p>}
+    {!archived&&answer.planning?.workflow&&<WorkflowCard workflow={answer.planning.workflow}/>}
+    {!archived&&answer.planning?.contextUsed&&<p className="lab-ask-context-resolution">Resolved follow-up: {answer.planning.scope}</p>}
     <p className="lab-ask-primary">{answer.answer}</p>
     {answer.chart&&<DataAnswerChart chart={answer.chart}/>}
     {answer.table.length>0 && <div className="lab-ask-table-scroll"><table>
@@ -99,7 +100,7 @@ function AnswerCard({answer,question,sourceName,target}: {answer:DataAnswer;ques
       <summary>Methodology and caveats ({answer.warnings.length})</summary>
       <ul>{answer.warnings.map((item,index)=><li key={index}>{item}</li>)}</ul>
     </details>}
-    <AnswerExports answer={answer} question={question} sourceName={sourceName} target={target}/>
+    {!archived&&<AnswerExports answer={answer} question={question} sourceName={sourceName} target={target}/>}
   </article>;
 }
 

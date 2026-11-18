@@ -50,6 +50,14 @@ After calculating an answer in Data Lab, choose **Save report** for a self-conta
 
 Export generation stays on-device and does not call the model. PowerPoint is built in memory by the bundled Python service; HTML and CSV are generated in Electron main. Saved reports remain on disk, while the imported CSV and unsaved Data Lab answers remain app-session data. See [local analysis exports](docs/standalone-data-exports.md), [CSV PowerPoint export](docs/standalone-data-powerpoint.md), and [LangGraph workflow](docs/standalone-langgraph-workflow.md).
 
+## Save and reopen an analysis in BOLT
+
+Choose **Save analysis** on a calculated Data Lab answer to create a local **.bolt** snapshot through the native Save dialog. It preserves the original question, source filename, target, displayed answer/table, full calculated chart points, calculation evidence and caveats (including applied filters). It does not contain the source CSV, schema preview, file paths, model settings or reusable execution state.
+
+Use **Open saved analysis** in Data Lab to review that file, including after restarting the app and before importing a CSV. The saved view is labeled **not recalculated** because snapshot files can be edited outside BOLT. It does not execute calculations, change live filters/questions, or supply follow-up context. Close preview removes only the session view; the saved file stays on disk.
+
+Opening uses a native picker and a bounded local read; malformed or unsupported files are rejected without discarding the prior preview. Saving/opening makes no backend, model or graph call. New calculations require importing the source CSV again. See [local analysis snapshots](docs/standalone-analysis-snapshots.md).
+
 ## Charts from CSV answers
 
 Grouped totals and means show bar charts; observed date-series answers show line charts using locally calculated aggregates. Open **View chart data** to inspect all plotted values, including retained date buckets beyond the answer table preview. Date buckets use equal horizontal spacing, so the chart note discloses that elapsed gaps may differ. Existing limits and coverage caveats remain visible.

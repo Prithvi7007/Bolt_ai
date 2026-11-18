@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { constants, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { constants, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -174,8 +174,8 @@ async function shutdown(running) {
 }
 
 // Drive the real Windows Save dialog in this disposable CI desktop only.
-function respondToSaveDialog(destination) {
-  assert.equal(process.platform,'win32','Native Save-dialog verification is Windows-only');
+function respondToFileDialog(destination, title) {
+  assert.equal(process.platform,'win32','Native file-dialog verification is Windows-only');
   const literal = value => "'" + value.replace(/'/g,"''") + "'";
   const keys = destination?.replace(/[+^%~()[\]{}]/g,c => '{' + c + '}');
   const action = destination ? [
@@ -192,10 +192,10 @@ function respondToSaveDialog(destination) {
     '$shell = New-Object -ComObject WScript.Shell',
     '$active = $false',
     'for ($attempt = 0; $attempt -lt 60; $attempt++) {',
-    "  if ($shell.AppActivate('Save BOLT analysis')) { $active = $true; break }",
+    '  if ($shell.AppActivate('+literal(title)+')) { $active = $true; break }',
     '  Start-Sleep -Milliseconds 200',
     '}',
-    "if (-not $active) { throw 'BOLT Save dialog was not found' }",
+    "if (-not $active) { throw 'BOLT file dialog was not found' }",
     'Start-Sleep -Milliseconds 300',
     ...action,
   ].join('\r\n');
@@ -203,12 +203,15 @@ function respondToSaveDialog(destination) {
     '-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{
     encoding:'utf8',windowsHide:true,timeout:20000,
   });
-  assert.equal(result.status,0,'Native Save dialog interaction failed: '+(result.stderr||result.error?.message||''));
+  assert.equal(result.status,0,'Native file dialog interaction failed: '+(result.stderr||result.error?.message||''));
 }
+
+function respondToSaveDialog(destination){return respondToFileDialog(destination,'Save BOLT analysis');}
 
 async function main() {
   const sandbox = mkdtempSync(path.join(tmpdir(), 'bolt-gui-'));
   let running;
+  const snapshotPath=path.join(sandbox,'synthetic-analysis.bolt');
   const modelRequests = [];
   const modelServer = createHttpServer((request, response) => {
     let body = '';
@@ -440,6 +443,43 @@ async function main() {
         assert.ok(exportedChart.text.includes(value),'PowerPoint chart retains '+value);
       }
       console.log('PASS: packaged CSV chart uses actual aggregates, saves SVG/HTML and editable PowerPoint shapes with full chart data');
+    }
+    if(process.platform==='win32'){
+      assert.equal(await first.eval('window.boltApi.openDataAnalysis({path:"forbidden"}).then(()=>false,()=>true)'),true,'Saved-file IPC cannot receive renderer paths');
+      const beforeOpen=await first.eval('document.querySelectorAll(".lab-ask-turn").length');
+      await first.eval('document.querySelector(".lab-ask-turn:last-child .lab-ask-save-snapshot").click()');
+      respondToSaveDialog(snapshotPath);
+      await eventually(async()=>existsSync(snapshotPath)&&await first.eval(
+        'document.querySelector(".lab-ask-turn:last-child .lab-ask-export-status")?.textContent === "Analysis snapshot saved."'
+      ),'A calculated chart saves as a local BOLT snapshot through the native dialog');
+      const saved=JSON.parse(readFileSync(snapshotPath,'utf8'));
+      assert.equal(saved.kind,'bolt.analysis.snapshot');assert.equal(saved.version,1);
+      assert.equal(saved.sourceName,'synthetic-lab.csv');assert.equal(saved.target,'attendance');
+      assert.deepEqual(saved.result.chart.points.map(p=>p.value),[100,120,130]);
+      assert.deepEqual(Object.keys(saved).sort(),['interpretation','kind','question','result','savedAt','sourceName','target','version']);
+      assert.equal(Object.hasOwn(saved.result,'planning'),false);
+      assert.equal(Object.hasOwn(saved.result,'rows'),false);
+      await first.eval('document.querySelector(".lab-open-analysis").click()');
+      respondToFileDialog(snapshotPath,'Open BOLT analysis');
+      await eventually(async()=>await first.eval(
+        'document.querySelector(".lab-saved-analysis")?.textContent?.includes("not recalculated") && document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length === 3'
+      ),'The saved chart reopens with an explicit snapshot label');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-ask-turn").length'),beforeOpen,'Opening a snapshot leaves live question history intact');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-saved-analysis .lab-ask-exports,.lab-saved-analysis .lab-ask-composer,.lab-saved-analysis .lab-data-workflow").length'),0,'Saved contents cannot act as a live question or fresh-result export');
+      const malformed=path.join(sandbox,'malformed-analysis.bolt');
+      writeFileSync(malformed,'{"kind":"not-a-bolt-snapshot"}');
+      await first.eval('document.querySelector(".lab-open-analysis").click()');
+      respondToFileDialog(malformed,'Open BOLT analysis');
+      await eventually(async()=>await first.eval('!!document.querySelector(".lab-snapshot-error")'),'An invalid saved file is rejected visibly');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length'),3,'A rejected file preserves the previous saved preview');
+      await first.eval('document.querySelector(".lab-open-analysis").click()');
+      respondToFileDialog(undefined,'Open BOLT analysis');
+      await eventually(async()=>await first.eval('document.querySelector(".lab-snapshot-status")?.textContent === "Open cancelled."'),'Cancelling the picker is explicit');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length'),3,'Cancelling an open does not discard the previous preview');
+      await first.eval('document.querySelector(".lab-close-analysis").click()');
+      await eventually(async()=>await first.eval('!document.querySelector(".lab-saved-analysis")'),'Closing saved review leaves the live dataset in place');
+      assert.equal(await first.eval('document.querySelectorAll(".lab-ask-turn").length'),beforeOpen,'Close preview does not reset live questions');
+      console.log('PASS: packaged analysis snapshot saves and reopens charts/evidence through native dialogs; invalid/cancel/close leave live questions unchanged');
     }
     assert.equal(modelRequests.length,0,'Chart calculation and export must not call the model');
     async function askLocal(question) {
@@ -684,6 +724,23 @@ async function main() {
       '/^\\s*SELECT\\b/i.test(document.querySelector("pre.sql code")?.textContent || "")'
     ), true, 'Restart must restore SQL evidence from persisted conversation');
     console.log('PASS: packaged Electron restart restores conversation, chart and evidence');
+    if(process.platform==='win32'){
+      const requestsBeforeOpen=modelRequests.length;
+      await second.eval('([...document.querySelectorAll("button.workspace-button")].find(x=>x.textContent.includes("Data Lab")))?.click()');
+      await eventually(async()=>await second.eval(
+        'getComputedStyle(document.querySelector("main.data-lab")).display !== "none" && !!document.querySelector(".lab-open-analysis")'
+      ),'Saved analyses can be opened before importing a CSV after restart');
+      assert.equal(await second.eval('!!document.querySelector(".lab-result-header") || !!document.querySelector(".lab-ask-composer")'),false,'The restarted app has no imported live CSV');
+      await second.eval('document.querySelector(".lab-open-analysis").click()');
+      respondToFileDialog(snapshotPath,'Open BOLT analysis');
+      await eventually(async()=>await second.eval(
+        'document.querySelector(".lab-saved-analysis")?.textContent?.includes("synthetic-lab.csv") && document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length === 3'
+      ),'A saved chart and evidence reopen after process restart without source reimport');
+      assert.equal(await second.eval('!!document.querySelector(".lab-ask-composer") || !!document.querySelector(".lab-ask-context")'),false,'Saved review cannot create live target approval or follow-up context');
+      assert.equal(modelRequests.length,requestsBeforeOpen,'Reopening a saved snapshot makes no model call');
+      console.log('PASS: packaged analysis snapshot reopens after app restart without importing the source CSV or executing a model/calculation');
+    }
+
   } finally {
     modelServer.closeAllConnections();
     await new Promise(resolve=>modelServer.close(resolve));

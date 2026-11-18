@@ -3,6 +3,7 @@
 const {app, BrowserWindow, ipcMain, dialog, safeStorage} = require('electron');
 const {createModelSettings} = require('./model-settings.cjs');
 const {saveDataAnswer} = require('./data-answer-export.cjs');
+const {openDataAnalysis} = require('./analysis-snapshot.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const {isAllowedNavigation} = require('./navigation.cjs');
@@ -115,6 +116,17 @@ app.whenReady().then(async () => {
           return backend.createDataPresentation(input);
         },
       });
+    });
+    ipcMain.handle('bolt:open-data-analysis', async (event, ...args) => {
+      const source=event.senderFrame?.url;
+      if(args.length||event.senderFrame!==event.sender.mainFrame
+        ||!isAllowedNavigation(source,process.env.BOLT_DEV==='1',
+          DEV_URL,path.join(__dirname,'../dist/index.html'))){
+        throw new Error('Unauthorized BOLT saved-analysis request');
+      }
+      const owner=BrowserWindow.fromWebContents(event.sender);
+      if(!owner)throw new Error('BOLT window is unavailable');
+      return openDataAnalysis({showOpenDialog:options=>dialog.showOpenDialog(owner,options)});
     });
     ipcMain.handle('bolt:save-artifact', async (event, artifactId, sessionId, filename) => {
       const source = event.senderFrame?.url;
