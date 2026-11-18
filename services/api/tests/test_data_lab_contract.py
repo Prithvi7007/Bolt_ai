@@ -55,5 +55,5 @@ def test_ask_your_data_local_query_contract():
         assert network_call not in gui
     assert "answerWithAIPlanning(file" in gui
     assert "approvedTarget && sourceFile && <AskYourData" in lab
-    assert "No filters, forecasts or causal claims" in gui
+    assert "No free-text filters, forecasts or causal claims" in gui
     assert "No model" in engine

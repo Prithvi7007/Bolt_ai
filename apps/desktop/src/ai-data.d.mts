@@ -1,3 +1,4 @@
+import type {CategoryFilter} from './local-analysis.mjs';
 import type {DatasetProfile} from './dataset-understanding.mjs';
 import type {DataAnswer,QuestionPlan} from './ask-data.mjs';
 export function schemaPlanningRequest(question:string,profile:DatasetProfile,target:string):BoltDataPlanningInput;
@@ -5,6 +6,7 @@ export function answerWithAIPlanning(file:File,question:string,profile:DatasetPr
   useModel?:boolean;planData?:(input:BoltDataPlanningInput)=>Promise<BoltDataPlanResponse>;
   completeDataRun?:(input:BoltDataRunReceipt)=>Promise<BoltDataPlanResponse>;
   previousPlan?:QuestionPlan|null;
+  categoryFilter?:CategoryFilter|null;
   isCurrent?:()=>boolean;
   onPhase?:(phase:'planning'|'calculating'|'confirming')=>void;
 }):Promise<DataAnswer>;

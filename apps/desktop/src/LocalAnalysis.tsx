@@ -1,6 +1,6 @@
-import {useState} from 'react';
+import {useState,useEffect,useRef} from 'react';
 import {Activity, AlertTriangle, BarChart3, CheckCircle2, Database, Play, ShieldCheck} from 'lucide-react';
-import {analyzeCsvFile, type LocalAnalysisReport} from './local-analysis.mjs';
+import {analyzeCsvFile, type LocalAnalysisReport,type CategoryFilter} from './local-analysis.mjs';
 import type {DatasetProfile} from './dataset-understanding.mjs';
 import './local-analysis.css';
 
@@ -32,7 +32,9 @@ function Timeline({report, aggregation}: {report: LocalAnalysisReport; aggregati
   </div>;
 }
 
-export default function LocalAnalysis({file, profile, target}: {file: File; profile: DatasetProfile; target: string}) {
+export default function LocalAnalysis({file, profile, target,categoryFilter=null}: {file: File; profile: DatasetProfile; target: string;categoryFilter?:CategoryFilter|null}) {
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const [dimension, setDimension] = useState('');
   const [aggregation, setAggregation] = useState<'sum' | 'mean'>('sum');
   const [report, setReport] = useState<LocalAnalysisReport | null>(null);
@@ -45,13 +47,13 @@ export default function LocalAnalysis({file, profile, target}: {file: File; prof
     setError('');
     try {
       const outcome = await analyzeCsvFile(file, {
-        target, dimension: dimension || null, dateColumn: profile.dateColumn,
+        target, dimension: dimension || null, dateColumn: profile.dateColumn,categoryFilter,
       });
-      setReport(outcome);
+      if(alive.current)setReport(outcome);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to analyze this dataset');
+      if(alive.current)setError(cause instanceof Error ? cause.message : 'Unable to analyze this dataset');
     } finally {
-      setRunning(false);
+      if(alive.current)setRunning(false);
     }
   }
   return <section className="lab-analysis" aria-label="Local target analysis">
@@ -59,7 +61,7 @@ export default function LocalAnalysis({file, profile, target}: {file: File; prof
     <p className="lab-target-description">Run a second, local streaming pass over the file to calculate real descriptive statistics. It does not send CSV data to the synthetic Analyst API or an LLM, and it does not train a forecasting model.</p>
     <div className="lab-analysis-controls">
       <div><label htmlFor="bolt-group">OPTIONAL BREAKDOWN</label>
-        <select id="bolt-group" value={dimension} onChange={e => {setDimension(e.target.value); setReport(null);}}>
+        <select id="bolt-group" disabled={running} value={dimension} onChange={e => {setDimension(e.target.value); setReport(null);}}>
           <option value="">None — overall target only</option>
           {candidateDimensions.map(col => <option value={col.name} key={col.name}>{col.name}</option>)}
         </select>
@@ -71,7 +73,8 @@ export default function LocalAnalysis({file, profile, target}: {file: File; prof
     {error && <p role="alert" className="lab-error"><AlertTriangle size={16}/>{error}</p>}
     {report && <div className="lab-analysis-results">
       <div className="lab-analysis-provenance"><CheckCircle2 size={17}/>
-        Analyzed {report.validRows.toLocaleString()} rows with valid {target} from {report.scannedRows.toLocaleString()} accepted CSV rows. No remote request.</div>
+        Analyzed {report.validRows.toLocaleString()} rows with valid {target} from {report.matchedRows.toLocaleString()} matching rows / {report.scannedRows.toLocaleString()} accepted CSV rows. No remote request.</div>
+      {categoryFilter&&report.matchedRows===0&&<p className="lab-analysis-empty">No accepted rows match this filter. Change or clear it to calculate a result.</p>}
       <div className="lab-analysis-kpis">
         <div><span>AVERAGE {target.toUpperCase()}</span><strong>{display(report.mean)}</strong></div>
         <div><span>TOTAL</span><strong>{display(report.total)}</strong></div>

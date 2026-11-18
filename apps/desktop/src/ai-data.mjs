@@ -1,4 +1,5 @@
 /** Optional schema-only interpretation; all reported numbers come from local calculation. */
+import {validateCategoryFilter} from './local-analysis.mjs';
 import {answerDataPlan,resolveDataQuestionPlan,describeDataPlan,validateDataPlan} from './ask-data.mjs';
 
 export function schemaPlanningRequest(question, profile, target) {
@@ -20,13 +21,14 @@ function checkedWorkflow(value) {
 }
 const staleError=()=>new Error('The dataset changed. Ask again with the current dataset.');
 
-export async function answerWithAIPlanning(file,question,profile,target,{useModel=false,planData,completeDataRun,previousPlan=null,onPhase=()=>{},isCurrent=()=>true}={}) {
+export async function answerWithAIPlanning(file,question,profile,target,{useModel=false,planData,completeDataRun,previousPlan=null,categoryFilter=null,onPhase=()=>{},isCurrent=()=>true}={}) {
+  categoryFilter=validateCategoryFilter(categoryFilter,profile);
   const resolved=resolveDataQuestionPlan(question,profile,target,previousPlan);
   const localPlan=resolved.plan;
   if(resolved.contextUsed||!useModel||localPlan.kind!=='unsupported'||!localPlan.aiEligible){
     if(!isCurrent())throw staleError();
     onPhase('calculating');
-    const answer=await answerDataPlan(file,localPlan,profile,target);
+    const answer=await answerDataPlan(file,localPlan,profile,target,{categoryFilter});
     if(!isCurrent())throw staleError();
     const plan=localPlan.kind==='unsupported'?undefined:validateDataPlan(localPlan,profile,target);
     const scope=plan?describeDataPlan(plan):undefined;
@@ -52,7 +54,7 @@ export async function answerWithAIPlanning(file,question,profile,target,{useMode
       if(workflow.awaiting_local&&typeof completeDataRun!=='function')throw new Error('Restart the desktop app to enable local workflow confirmation.');
     }
     onPhase('calculating');
-    answer=await answerDataPlan(file,plan,profile,target);
+    answer=await answerDataPlan(file,plan,profile,target,{categoryFilter});
     if(!isCurrent())throw staleError();
   } catch(error) {
     try {await record(isCurrent()?'failed':'cancelled');} catch { /* Expiry or disconnect must not obscure the original local error. */ }

@@ -3,6 +3,7 @@ import {Activity, ArrowUp, CheckCircle2, Database, Download, FileText, Info,
   MessageSquareText, ShieldCheck, Sparkles} from 'lucide-react';
 import {suggestedDataQuestions,describeDataPlan, type DataAnswer, type QuestionPlan} from './ask-data.mjs';
 import {answerWithAIPlanning} from './ai-data.mjs';
+import {describeCategoryFilter,type CategoryFilter} from './local-analysis.mjs';
 import type {DatasetProfile} from './dataset-understanding.mjs';
 import DataAnswerChart from './DataAnswerChart';
 import './ask-data.css';
@@ -102,7 +103,7 @@ function AnswerCard({answer,question,sourceName,target}: {answer:DataAnswer;ques
   </article>;
 }
 
-export default function AskYourData({file, profile, target}:{file:File;profile:DatasetProfile;target:string}) {
+export default function AskYourData({file, profile, target,categoryFilter=null}:{file:File;profile:DatasetProfile;target:string;categoryFilter?:CategoryFilter|null}) {
   const alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const [useModel,setUseModel]=useState(false);
@@ -122,7 +123,7 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
     try {
       const answer=await answerWithAIPlanning(file,q,profile,target,{
         useModel,planData:window.boltApi?.planData,completeDataRun:window.boltApi?.completeDataRun,
-        previousPlan:contextPlan,onPhase:setPhase,isCurrent:()=>alive.current,
+        previousPlan:contextPlan,categoryFilter,onPhase:setPhase,isCurrent:()=>alive.current,
       });
       if(!alive.current)return;
       if(answer.kind==='answered'&&answer.planning?.plan)setContextPlan(answer.planning.plan.kind==='quality'?null:answer.planning.plan);
@@ -147,6 +148,7 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
     <div className="lab-panel-title"><span>06 / ASK YOUR DATA</span>
       <h3><MessageSquareText size={18}/> Ask a question. See the calculation.</h3></div>
     <p className="lab-target-description">BOLT calculates answers about your <strong>{target}</strong> from the actual CSV. Familiar questions run locally. You can enable AI to interpret an unfamiliar question into one of the same local calculations.</p>
+    {categoryFilter&&<p className="lab-ask-active-filter">Applied local filter: {describeCategoryFilter(categoryFilter)}</p>}
     <label className="lab-ai-choice"><input type="checkbox" checked={useModel} disabled={busy||!window.boltApi?.planData} onChange={event=>setUseModel(event.target.checked)}/> Use AI for unfamiliar questions</label>
     <p className="lab-table-note">{useModel?'When needed, this sends your question, approved target, and column names/types to the model configured in Settings. CSV rows, example values and filenames are not sent.':'AI planning is off. Questions and CSV data stay local.'}</p>
     <div className="lab-ask-capabilities"><span><ShieldCheck size={14}/> Local data only</span><span><Activity size={14}/> Reproducible formulas</span><span><Sparkles size={14}/> {useModel?'AI assistance enabled':'No model calls'}</span></div>
@@ -174,7 +176,7 @@ export default function AskYourData({file, profile, target}:{file:File;profile:D
         aria-label="Ask about the approved CSV target"
         placeholder={'For example: What is the average '+target+' by region?'}
       />
-      <div><small>Supported: summaries, group totals, rankings, trends, missingness, correlations. No filters, forecasts or causal claims. Enter to send · Shift+Enter for a new line.</small>
+      <div><small>Supported: summaries, group totals, rankings, trends, missingness, correlations. Set subsets with the local filter controls. No free-text filters, forecasts or causal claims. Enter to send · Shift+Enter for a new line.</small>
         <button type="submit" disabled={busy||!question.trim()} aria-label="Calculate CSV answer"><ArrowUp size={18}/> Calculate</button></div>
     </form>
     <p className="lab-ask-bottom"><ShieldCheck size={13}/> Only approved-target calculations. Answers stay in this app session. AI planning, when enabled and needed, shares schema and the question through your personal model connection.</p>
