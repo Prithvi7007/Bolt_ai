@@ -174,39 +174,70 @@ async function shutdown(running) {
 }
 
 // Drive real Windows file dialogs in this disposable CI desktop only.
+// UI Automation targets the dialog controls directly, independent of keyboard focus.
 function respondToFileDialog(destination, title) {
   assert.equal(process.platform,'win32','Native file-dialog verification is Windows-only');
-  const literal = value => "'" + value.replace(/'/g,"''") + "'";
-  const keys = destination?.replace(/[+^%~()[\]{}]/g,c => '{' + c + '}');
-  const action = destination ? [
-    "[System.Windows.Forms.SendKeys]::SendWait('%n')",
-    'Start-Sleep -Milliseconds 150',
-    "[System.Windows.Forms.SendKeys]::SendWait('^a')",
-    '[System.Windows.Forms.SendKeys]::SendWait(' + literal(keys) + ')',
-    'Start-Sleep -Milliseconds 150',
-    // Activate Open explicitly so a filename-completion popup cannot consume Enter.
-    title==='Open BOLT analysis'
-      ? "[System.Windows.Forms.SendKeys]::SendWait('%o')"
-      : "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
-  ] : ["[System.Windows.Forms.SendKeys]::SendWait('{ESC}')"];
-  const script = [
+  const literal=value=>"'"+value.replace(/'/g,"''")+"'";
+  const script=[
     "$ErrorActionPreference = 'Stop'",
-    'Add-Type -AssemblyName System.Windows.Forms',
-    '$shell = New-Object -ComObject WScript.Shell',
-    '$active = $false',
+    'Add-Type -AssemblyName UIAutomationClient',
+    'Add-Type -AssemblyName UIAutomationTypes',
+    '$root = [System.Windows.Automation.AutomationElement]::RootElement',
+    '$descendants = [System.Windows.Automation.TreeScope]::Descendants',
+    '$nameProperty = [System.Windows.Automation.AutomationElement]::NameProperty',
+    '$typeProperty = [System.Windows.Automation.AutomationElement]::ControlTypeProperty',
+    '$dialogCondition = [System.Windows.Automation.PropertyCondition]::new($nameProperty,'+literal(title)+')',
+    '$dialog = $null',
     'for ($attempt = 0; $attempt -lt 60; $attempt++) {',
-    '  if ($shell.AppActivate('+literal(title)+')) { $active = $true; break }',
+    '  $dialog = $root.FindFirst([System.Windows.Automation.TreeScope]::Children,$dialogCondition)',
+    '  if ($null -ne $dialog) { break }',
     '  Start-Sleep -Milliseconds 200',
     '}',
-    "if (-not $active) { throw 'BOLT file dialog was not found' }",
-    'Start-Sleep -Milliseconds 300',
-    ...action,
+    "if ($null -eq $dialog) { throw 'BOLT file dialog was not found' }",
+    'function Describe-Dialog {',
+    '  $controls = $dialog.FindAll($descendants,[System.Windows.Automation.Condition]::TrueCondition)',
+    '  $items = foreach ($control in $controls) {',
+    '    if ($control.Current.IsEnabled -and -not $control.Current.IsOffscreen) {',
+    '      $control.Current.ControlType.ProgrammaticName + \": \" + $control.Current.Name + \" [\" + $control.Current.AutomationId + \"]\"',
+    '    }',
+    '  }',
+    '  ($items | Select-Object -First 30) -join \"; \"',
+    '}',
+    ...(destination?[
+      '$editCondition = [System.Windows.Automation.PropertyCondition]::new($typeProperty,[System.Windows.Automation.ControlType]::Edit)',
+      '$filename = $null',
+      'for ($attempt = 0; $attempt -lt 30; $attempt++) {',
+      '  $edits = $dialog.FindAll($descendants,$editCondition)',
+      '  foreach ($edit in $edits) {',
+      '    if ($edit.Current.IsEnabled -and $edit.Current.Name -match \"^File name:?$\" -and $edit.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::IsValuePatternAvailableProperty)) { $filename = $edit; break }',
+      '  }',
+      '  if ($null -ne $filename) { break }',
+      '  Start-Sleep -Milliseconds 100',
+      '}',
+      'if ($null -eq $filename) { throw (\"BOLT filename control not found: \" + (Describe-Dialog)) }',
+      '$value = $filename.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)',
+      '$value.SetValue('+literal(destination)+')',
+      'if ($value.Current.Value -ne '+literal(destination)+') { throw \"BOLT filename control did not retain the selected path\" }',
+    ]:[]),
+    '$buttonName = '+literal(destination?(title==='Open BOLT analysis'?'Open':'Save'):'Cancel'),
+    '$buttonCondition = [System.Windows.Automation.AndCondition]::new(',
+    '  [System.Windows.Automation.PropertyCondition]::new($typeProperty,[System.Windows.Automation.ControlType]::Button),',
+    '  [System.Windows.Automation.PropertyCondition]::new($nameProperty,$buttonName))',
+    '$button = $dialog.FindFirst($descendants,$buttonCondition)',
+    'if ($null -eq $button -or -not $button.Current.IsEnabled) { throw (\"BOLT file-dialog button unavailable: \" + (Describe-Dialog)) }',
+    '$invoke = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)',
+    '$invoke.Invoke()',
+    'for ($attempt = 0; $attempt -lt 50; $attempt++) {',
+    '  Start-Sleep -Milliseconds 100',
+    '  if ($null -eq $root.FindFirst([System.Windows.Automation.TreeScope]::Children,$dialogCondition)) { exit 0 }',
+    '}',
+    'throw (\"BOLT file dialog did not close after \" + $buttonName + \": \" + (Describe-Dialog))',
   ].join('\r\n');
   const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-STA',
     '-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{
-    encoding:'utf8',windowsHide:true,timeout:20000,
+    encoding:'utf8',windowsHide:true,timeout:25000,
   });
-  assert.equal(result.status,0,'Native file dialog interaction failed: '+(result.stderr||result.error?.message||''));
+  assert.equal(result.status,0,'Native file dialog interaction failed: '+(result.stderr||result.stdout||result.error?.message||''));
 }
 
 function respondToSaveDialog(destination){return respondToFileDialog(destination,'Save BOLT analysis');}
