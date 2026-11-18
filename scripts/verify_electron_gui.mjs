@@ -117,7 +117,6 @@ async function launch(sandbox) {
     LOCALAPPDATA: path.join(sandbox, 'local'),
     XDG_CONFIG_HOME: sandbox,
     BOLT_DEV: '0',
-    BOLT_DIAGNOSTICS: '1',
   };
   let command = appBinary;
   let argv = args;
@@ -219,6 +218,61 @@ async function clickVisibleButton(cdp,selector) {
   const point=await cdp.eval('(() => { const button=document.querySelector('+JSON.stringify(selector)+'); if(!button||button.disabled)throw new Error("Button unavailable"); button.scrollIntoView({block:"center"}); const r=button.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()');
   await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});
   await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
+}
+
+// The cold-start Open picker uses the classic filename Edit (ID 1148).
+// Select through that real native dialog without relying on runner foreground focus.
+function respondToRestartOpenDialog(destination){
+  const script=[
+    'import ctypes, sys, time',
+    'from ctypes import wintypes',
+    'u=ctypes.WinDLL("user32",use_last_error=True)',
+    'u.FindWindowW.argtypes=[wintypes.LPCWSTR,wintypes.LPCWSTR];u.FindWindowW.restype=wintypes.HWND',
+    'u.GetDlgItem.argtypes=[wintypes.HWND,ctypes.c_int];u.GetDlgItem.restype=wintypes.HWND',
+    'u.GetParent.argtypes=[wintypes.HWND];u.GetParent.restype=wintypes.HWND',
+    'u.GetDlgCtrlID.argtypes=[wintypes.HWND];u.GetDlgCtrlID.restype=ctypes.c_int',
+    'u.GetClassNameW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int];u.GetClassNameW.restype=ctypes.c_int',
+    'u.IsChild.argtypes=[wintypes.HWND,wintypes.HWND];u.IsChild.restype=wintypes.BOOL',
+    'u.IsWindow.argtypes=[wintypes.HWND];u.IsWindow.restype=wintypes.BOOL',
+    'u.IsWindowEnabled.argtypes=[wintypes.HWND];u.IsWindowEnabled.restype=wintypes.BOOL',
+    'u.PostMessageW.argtypes=[wintypes.HWND,wintypes.UINT,wintypes.WPARAM,wintypes.LPARAM];u.PostMessageW.restype=wintypes.BOOL',
+    'u.SendMessageTimeoutW.argtypes=[wintypes.HWND,wintypes.UINT,wintypes.WPARAM,wintypes.LPARAM,wintypes.UINT,wintypes.UINT,ctypes.POINTER(ctypes.c_size_t)];u.SendMessageTimeoutW.restype=wintypes.LPARAM',
+    'callback_type=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HWND,wintypes.LPARAM)',
+    'u.EnumChildWindows.argtypes=[wintypes.HWND,callback_type,wintypes.LPARAM];u.EnumChildWindows.restype=wintypes.BOOL',
+    'def class_name(window):',
+    '    name=ctypes.create_unicode_buffer(256);u.GetClassNameW(window,name,len(name));return name.value',
+    'dialog=None',
+    'for attempt in range(60):',
+    '    dialog=u.FindWindowW(None,"Open BOLT analysis")',
+    '    if dialog: break',
+    '    time.sleep(0.2)',
+    'assert dialog, "Restart Open dialog not found"',
+    'assert class_name(dialog)=="#32770", "Unexpected native Open dialog class"',
+    'edits=[]',
+    '@callback_type',
+    'def visit(window,param):',
+    '    if u.GetDlgCtrlID(window)==1148 and class_name(window)=="Edit": edits.append(window)',
+    '    return True',
+    'u.EnumChildWindows(dialog,visit,0)',
+    'assert len(edits)==1, "Expected one classic native filename Edit"',
+    'edit=edits[0];button=u.GetDlgItem(dialog,1)',
+    'assert u.IsChild(dialog,edit) and u.IsWindowEnabled(edit), "Native filename Edit unavailable"',
+    'assert button and class_name(button)=="Button" and u.GetParent(button)==dialog and u.IsWindowEnabled(button), "Native Open button unavailable"',
+    'result=ctypes.c_size_t()',
+    'filename=ctypes.create_unicode_buffer(sys.argv[1])',
+    'assert u.SendMessageTimeoutW(edit,0x000C,0,ctypes.addressof(filename),2,2000,ctypes.byref(result)) and result.value, "Native filename entry failed"',
+    'readback=ctypes.create_unicode_buffer(32768)',
+    'assert u.SendMessageTimeoutW(edit,0x000D,len(readback),ctypes.addressof(readback),2,2000,ctypes.byref(result)), "Native filename readback failed"',
+    'assert readback.value==sys.argv[1], "Native filename differs from saved file"',
+    '# BN_CLICKED=0; route the verified Open button command to its actual parent.',
+    'assert u.PostMessageW(dialog,0x0111,1,button), "Native Open command failed"',
+    'for attempt in range(50):',
+    '    if not u.IsWindow(dialog): break',
+    '    time.sleep(0.1)',
+    'assert not u.IsWindow(dialog), "Restart Open dialog did not close"',
+  ].join('\n');
+  const result=spawnSync('python',['-c',script,destination],{encoding:'utf8',windowsHide:true,timeout:25000});
+  assert.equal(result.status,0,'Native restart picker failed: '+(result.stderr||result.stdout||result.error?.message||''));
 }
 
 function captureWindowsDialogState(){
@@ -778,7 +832,7 @@ async function main() {
       assert.equal(storedSnapshot.sourceName,'synthetic-lab.csv','The saved file survives process restart');
       assert.deepEqual(storedSnapshot.result.chart.points.map(p=>p.value),[100,120,130]);
       await clickVisibleButton(second,'.lab-open-analysis');
-      respondToFileDialog(snapshotPath,'Open BOLT analysis');
+      respondToRestartOpenDialog(snapshotPath);
       try{
         await eventually(async()=>{
           const state=await second.eval('({source:document.querySelector(".lab-snapshot-metadata")?.textContent||"",points:document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length,status:document.querySelector(".lab-snapshot-status")?.textContent||"",error:document.querySelector(".lab-snapshot-error")?.textContent||"",opening:document.querySelector(".lab-open-analysis")?.disabled})');
