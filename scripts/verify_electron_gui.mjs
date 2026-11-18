@@ -173,7 +173,7 @@ async function shutdown(running) {
   await wait(500);
 }
 
-// Drive the real Windows Save dialog in this disposable CI desktop only.
+// Drive real Windows file dialogs in this disposable CI desktop only.
 function respondToFileDialog(destination, title) {
   assert.equal(process.platform,'win32','Native file-dialog verification is Windows-only');
   const literal = value => "'" + value.replace(/'/g,"''") + "'";
@@ -184,7 +184,10 @@ function respondToFileDialog(destination, title) {
     "[System.Windows.Forms.SendKeys]::SendWait('^a')",
     '[System.Windows.Forms.SendKeys]::SendWait(' + literal(keys) + ')',
     'Start-Sleep -Milliseconds 150',
-    "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
+    // Activate Open explicitly so a filename-completion popup cannot consume Enter.
+    title==='Open BOLT analysis'
+      ? "[System.Windows.Forms.SendKeys]::SendWait('%o')"
+      : "[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')",
   ] : ["[System.Windows.Forms.SendKeys]::SendWait('{ESC}')"];
   const script = [
     "$ErrorActionPreference = 'Stop'",
@@ -731,11 +734,16 @@ async function main() {
         'getComputedStyle(document.querySelector("main.data-lab")).display !== "none" && !!document.querySelector(".lab-open-analysis")'
       ),'Saved analyses can be opened before importing a CSV after restart');
       assert.equal(await second.eval('!!document.querySelector(".lab-result-header") || !!document.querySelector(".lab-ask-composer")'),false,'The restarted app has no imported live CSV');
+      const storedSnapshot=JSON.parse(readFileSync(snapshotPath,'utf8'));
+      assert.equal(storedSnapshot.sourceName,'synthetic-lab.csv','The saved file survives process restart');
+      assert.deepEqual(storedSnapshot.result.chart.points.map(p=>p.value),[100,120,130]);
       await second.eval('document.querySelector(".lab-open-analysis").click()');
       respondToFileDialog(snapshotPath,'Open BOLT analysis');
-      await eventually(async()=>await second.eval(
-        'document.querySelector(".lab-saved-analysis")?.textContent?.includes("synthetic-lab.csv") && document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length === 3'
-      ),'A saved chart and evidence reopen after process restart without source reimport');
+      await eventually(async()=>{
+        const state=await second.eval('({source:document.querySelector(".lab-snapshot-metadata")?.textContent||"",points:document.querySelectorAll(".lab-saved-analysis .lab-answer-chart circle").length,status:document.querySelector(".lab-snapshot-status")?.textContent||"",error:document.querySelector(".lab-snapshot-error")?.textContent||"",opening:document.querySelector(".lab-open-analysis")?.disabled})');
+        if(state.source.includes('synthetic-lab.csv')&&state.points===3)return true;
+        throw new Error('Saved-review state: '+JSON.stringify(state));
+      },'A saved chart and evidence reopen after process restart without source reimport');
       assert.equal(await second.eval('!!document.querySelector(".lab-ask-composer") || !!document.querySelector(".lab-ask-context")'),false,'Saved review cannot create live target approval or follow-up context');
       assert.equal(modelRequests.length,requestsBeforeOpen,'Reopening a saved snapshot makes no model call');
       console.log('PASS: packaged analysis snapshot reopens after app restart without importing the source CSV or executing a model/calculation');
